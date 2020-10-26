@@ -4,7 +4,9 @@ cc_binary(
     srcs = [
         "main.cpp",
         "write/writer.h",
-        "write/writer.cpp"
+        "write/writer.cpp",
+        "utils/Config.cpp",
+        "utils/Config.h"
     ],
     linkopts = [
         "-std=c++17",

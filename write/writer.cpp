@@ -22,7 +22,6 @@ namespace filesystem
     file.flush();
     f_lock.unlock();
     return 0;
-    return 0;
   }
 
   int Writer::WriteAsNewFile(std::string filename, std::string text)

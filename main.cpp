@@ -1,8 +1,9 @@
 #include <iostream>
 #include "write/writer.h"
+#include "utils/Config.h"
 
 int main()
 {
-    std::cout << "Hello World" << std::endl;
+    Config::Conf conf("./conf.ini");
     return 0;
 }

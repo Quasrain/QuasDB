@@ -1,8 +1,8 @@
 #include "Config.h"
-
 #include <string.h>
 #include <iostream>
 #include <boost/property_tree/ini_parser.hpp>
+#include "error/ErrorAll.h"
 
 namespace Config
 {
@@ -10,6 +10,14 @@ namespace Config
   {
     conf_path = path;
 
-    boost::property_tree::ini_parser::read_ini(conf_path, conf);
+    try
+    {
+      boost::property_tree::ini_parser::read_ini(conf_path, conf);
+    }
+    catch(const std::exception& e)
+    {
+      std::cerr << e.what() << std::endl;
+      std::cout << "QAQ" << std::endl;
+    }
   }
 } // namespace Config

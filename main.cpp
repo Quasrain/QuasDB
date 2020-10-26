@@ -4,6 +4,6 @@
 
 int main()
 {
-    Config::Conf conf("./conf.ini");
+    Config::Conf conf("./conf.inii");
     return 0;
 }

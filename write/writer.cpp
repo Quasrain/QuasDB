@@ -5,7 +5,7 @@
 #include <iostream>
 #include <boost/interprocess/sync/file_lock.hpp>
 
-namespace filesystem
+namespace FileSystem
 {
   int Writer::WriteInEnd(std::string filename, std::string text)
   {
@@ -40,4 +40,4 @@ namespace filesystem
     f_lock.unlock();
     return 0;
   }
-}
+} // namespace FileSystem

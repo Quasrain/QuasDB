@@ -1,7 +1,9 @@
 #pragma once
 
+#include <iostream>
 #include <string>
 #include <boost/property_tree/ini_parser.hpp>
+#include "error/ErrorAll.h"
 
 namespace Config
 {
@@ -11,9 +13,18 @@ namespace Config
     Conf(std::string path);
 
     template<typename T>
-    T GetConfig(std::string key)
+    const int GetConfig(std::string key, T& value)
     {
-      return conf.get<T>(key);
+      try
+      {
+        value = conf.get<T>(key);
+        return Error::kSucc;
+      }
+      catch (const std::exception& e)
+      {
+        std::cerr << e.what() << std::endl;
+        return Error::kConfKeyNotExist;
+      }
     }
 
   private:

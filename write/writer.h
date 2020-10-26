@@ -2,11 +2,11 @@
 
 #include <string>
 
-namespace filesystem
+namespace FileSystem
 {
   class Writer
   {
     int WriteAsNewFile(std::string filename, std::string text);
     int WriteInEnd(std::string filename, std::string text);
   };
-} // namespace filesystem
+} // namespace FileSystem

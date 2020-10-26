@@ -6,7 +6,9 @@ cc_binary(
         "write/writer.h",
         "write/writer.cpp",
         "utils/Config.cpp",
-        "utils/Config.h"
+        "utils/Config.h",
+        "error/ErrorAll.h",
+        "error/SystemError.h"
     ],
     linkopts = [
         "-std=c++17",

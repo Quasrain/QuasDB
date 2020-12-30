@@ -2,13 +2,23 @@
 cc_binary(
     name = "main",
     srcs = [
-        "main.cpp",
-        "write/writer.h",
-        "write/writer.cpp",
-        "utils/Config.cpp",
-        "utils/Config.h",
-        "error/ErrorAll.h",
-        "error/SystemError.h"
+        # conf
+        "conf/Config.cpp",
+        "conf/Config.h",
+        # error
+        "error/error_all.h",
+        "error/error_system.h",
+        # kv
+        "kv/include/slice.h",
+        "kv/include/status.h",
+        "kv/db/log_format.h",
+        "kv/db/log_writer.h",
+        "kv/db/log_writer.cpp",
+        "kv/util/coding.h",
+        "kv/util/coding.cpp",
+        "kv/util/crc32c.h",
+        "kv/util/crc32c.cpp",
+        "main.cpp"
     ],
     linkopts = [
         "-std=c++17",

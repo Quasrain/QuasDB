@@ -1,9 +1,8 @@
 #include <iostream>
-#include "write/writer.h"
-#include "utils/Config.h"
+#include "conf/Config.h"
 
 int main()
 {
-    Config::Conf conf("./conf.inii");
+    QuasDB::Config::Conf conf("./conf.inii");
     return 0;
 }

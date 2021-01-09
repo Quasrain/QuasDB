@@ -95,5 +95,5 @@ namespace QuasDB
 
     struct Rep;
     Rep *rep_;
-  }
+  };
 } // namespace QuasDB

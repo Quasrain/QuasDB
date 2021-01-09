@@ -27,3 +27,20 @@ cc_binary(
     ],
     deps = [],
 )
+
+# https://docs.bazel.build/versions/master/be/c-cpp.html#cc_binary
+cc_binary(
+    name = "testcrc",
+    srcs = [
+        "kv/include/slice.h",
+        "kv/util/coding.h",
+        "kv/util/coding.cpp",
+        "kv/util/crc32c.h",
+        "kv/util/crc32c.cpp",
+        "kv/util/crc32c_test.cpp"
+        ],
+    deps = [
+        "@gtest//:gtest",
+        "@gtest//:gtest_main" # Only if hello_test.cc has no main()
+    ],
+)

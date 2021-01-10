@@ -17,12 +17,13 @@ cc_library(
         # "kv/db/log_writer.cpp",
         "kv/util/arena.h",
         "kv/util/arena.cpp",
-        "kv/util/hash.h",
-        "kv/util/hash.cpp",
         "kv/util/coding.h",
         "kv/util/coding.cpp",
         "kv/util/crc32c.h",
-        "kv/util/crc32c.cpp"
+        "kv/util/crc32c.cpp",
+        "kv/util/hash.h",
+        "kv/util/hash.cpp",
+        "kv/util/status.cpp"
     ],
     linkopts = [
         "-std=c++17",
@@ -50,6 +51,19 @@ cc_binary(
     name = "testhash",
     srcs = [
         "kv/test/hash_test.cpp"
+        ],
+    deps = [
+        ":base",
+        "@gtest//:gtest",
+        "@gtest//:gtest_main" # Only if hello_test.cc has no main()
+    ],
+)
+
+# https://docs.bazel.build/versions/master/be/c-cpp.html#cc_binary
+cc_binary(
+    name = "teststatus",
+    srcs = [
+        "kv/test/status_test.cpp"
         ],
     deps = [
         ":base",

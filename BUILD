@@ -14,6 +14,7 @@ cc_library(
         # "kv/db/log_writer.cpp",
         "kv/include/cache.h",
         "kv/include/comparator.h",
+        "kv/include/env.h",
         "kv/include/filter_policy.h",
         "kv/include/slice.h",
         "kv/include/status.h",

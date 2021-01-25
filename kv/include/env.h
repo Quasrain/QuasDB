@@ -23,7 +23,12 @@ namespace QuasDB
     Env(const Env &) = delete;
     Env &operator=(const Env &) = delete;
 
-    ~Env();
+    ~Env()
+    {
+      static const char msg[] = "Env singleton destroyed behavaior!\n";
+      std::fwrite(msg, 1, sizeof(msg), stderr);
+      std::abort();
+    }
 
     static Env *Default();
 
@@ -576,6 +581,36 @@ namespace QuasDB
     const std::string dirname_; // The directory of filename_.
   };
 
+  // Tracks the files locked by PosixEnv::LockFile().
+  //
+  // We maintain a separate set instead of relying on fcntl(F_SETLK) because
+  // fcntl(F_SETLK) does not provide any protection against multiple uses from the
+  // same process.
+  //
+  // Instances are thread-safe because all member data is guarded by a mutex.
+  class LockTable
+  {
+  public:
+    bool Insert(const std::string &fname)
+    {
+      mu_.Lock();
+      bool succeeded = locked_files_.insert(fname).second;
+      mu_.Unlock();
+      return succeeded;
+    }
+
+    void Remove(const std::string &fname)
+    {
+      mu_.Lock();
+      locked_files_.erase(fname);
+      mu_.Unlock();
+    }
+
+  private:
+    std::mutex mu_;
+    std::set<std::string> locked_files_;
+  };
+
   class Logger
   {
   public:
@@ -696,6 +731,18 @@ namespace QuasDB
     std::FILE *const fp_;
   };
 
+  int LockOrUnlock(int fd, bool lock)
+  {
+    errno = 0;
+    struct ::flock file_lock_info;
+    std::memset(&file_lock_info, 0, sizeof(file_lock_info));
+    file_lock_info.l_type = (lock ? F_WRLCK : F_UNLCK);
+    file_lock_info.l_whence = SEEK_SET;
+    file_lock_info.l_start = 0;
+    file_lock_info.l_len = 0; // Lock/unlock entire file.
+    return ::fcntl(fd, F_SETLK, &file_lock_info);
+  }
+
   class FileLock
   {
   public:
@@ -704,7 +751,17 @@ namespace QuasDB
     FileLock(const FileLock &) = delete;
     FileLock &operator=(const FileLock &) = delete;
 
+    FileLock(int fd, std::string filename)
+        : fd_(fd), filename_(std::move(filename)) {}
+
     ~FileLock();
+
+    int fd() const { return fd_; }
+    const std::string &filename() const { return filename_; }
+
+  private:
+    const int fd_;
+    const std::string filename_;
   };
 
   void Log(Logger *info_log, const char *format, ...)

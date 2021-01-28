@@ -1,20 +1,108 @@
 #pragma once
 
-#include <sys/time.h>
-#include <cassert>
+#include <atomic>
+#include <condition_variable>
 #include <cstdarg>
-#include <cstdio>
 #include <cstdint>
-#include <ctime>
-#include <sstream>
+#include <mutex>
+#include <queue>
+#include <set>
 #include <string>
+#include <unistd.h>
 #include <vector>
-#include <thread>
 
-#include "status.h"
+#include "kv/include/status.h"
 
 namespace QuasDB
 {
+  class FileLock;
+  class Logger;
+  class RandomAccessFile;
+  class SequentialFile;
+  class Slice;
+  class WritableFile;
+
+  // Set by EnvPosixTestHelper::SetReadOnlyMMapLimit() and MaxOpenFiles().
+  int g_open_read_only_file_limit = -1;
+
+  // Up to 1000 mmap regions for 64-bit binaries; none for 32-bit.
+  constexpr const int kDefaultMmapLimit = (sizeof(void *) >= 8) ? 1000 : 0;
+
+  // Can be set using EnvPosixTestHelper::SetReadOnlyMMapLimit().
+  int g_mmap_limit = kDefaultMmapLimit;
+
+  constexpr const int kOpenBaseFlags = 0;
+
+  constexpr const size_t kWritableFileBufferSize = 65536;
+
+  // Helper class to limit resource usage to avoid exhaustion.
+  // Currently used to limit read-only file descriptors and mmap file usage
+  // so that we do not run out of file descriptors or virtual memory, or run into
+  // kernel performance problems for very large databases.
+  class Limiter
+  {
+  public:
+    // Limit maximum number of resources to |max_acquires|.
+    Limiter(int max_acquires) : acquires_allowed_(max_acquires) {}
+
+    Limiter(const Limiter &) = delete;
+    Limiter operator=(const Limiter &) = delete;
+
+    // If another resource is available, acquire it and return true.
+    // Else return false.
+    bool Acquire()
+    {
+      int old_acquires_allowed =
+          acquires_allowed_.fetch_sub(1, std::memory_order_relaxed);
+
+      if (old_acquires_allowed > 0)
+        return true;
+
+      acquires_allowed_.fetch_add(1, std::memory_order_relaxed);
+      return false;
+    }
+
+    // Release a resource acquired by a previous call to Acquire() that returned
+    // true.
+    void Release() { acquires_allowed_.fetch_add(1, std::memory_order_relaxed); }
+
+  private:
+    // The number of available resources.
+    //
+    // This is a counter and is not tied to the invariants of any other class, so
+    // it can be operated on safely using std::memory_order_relaxed.
+    std::atomic<int> acquires_allowed_;
+  };
+
+  // Tracks the files locked by PosixEnv::LockFile().
+  //
+  // We maintain a separate set instead of relying on fcntl(F_SETLK) because
+  // fcntl(F_SETLK) does not provide any protection against multiple uses from the
+  // same process.
+  //
+  // Instances are thread-safe because all member data is guarded by a mutex.
+  class LockTable
+  {
+  public:
+    bool Insert(const std::string &fname)
+    {
+      mu_.lock();
+      bool succeeded = locked_files_.insert(fname).second;
+      mu_.unlock();
+      return succeeded;
+    }
+    void Remove(const std::string &fname)
+    {
+      mu_.lock();
+      locked_files_.erase(fname);
+      mu_.unlock();
+    }
+
+  private:
+    std::mutex mu_;
+    std::set<std::string> locked_files_;
+  };
+
   class Env
   {
   public:
@@ -25,11 +113,17 @@ namespace QuasDB
 
     ~Env()
     {
-      static const char msg[] = "Env singleton destroyed behavaior!\n";
+      static const char msg[] =
+          "PosixEnv singleton destroyed. Unsupported behavior!\n";
       std::fwrite(msg, 1, sizeof(msg), stderr);
       std::abort();
     }
 
+    // Return a default environment suitable for the current operating
+    // system.  Sophisticated users may wish to provide their own Env
+    // implementation instead of relying on this default environment.
+    //
+    // The result of Default() belongs to leveldb and must never be deleted.
     static Env *Default();
 
     // Create an object that sequentially reads the file with the specified name.
@@ -88,38 +182,13 @@ namespace QuasDB
                        std::vector<std::string> *result);
 
     // Delete the named file.
-    //
-    // The default implementation calls DeleteFile, to support legacy Env
-    // implementations. Updated Env implementations must override RemoveFile and
-    // ignore the existence of DeleteFile. Updated code calling into the Env API
-    // must call RemoveFile instead of DeleteFile.
     Status RemoveFile(const std::string &fname);
-
-    // A future release will remove this method.
-    Status DeleteFile(const std::string &fname);
 
     // Create the specified directory.
     Status CreateDir(const std::string &dirname);
 
     // Delete the specified directory.
-    //
-    // The default implementation calls DeleteDir, to support legacy Env
-    // implementations. Updated Env implementations must override RemoveDir and
-    // ignore the existence of DeleteDir. Modern code calling into the Env API
-    // must call RemoveDir instead of DeleteDir.
-    //
-    // A future release will remove DeleteDir and the default implementation of
-    // RemoveDir.
     Status RemoveDir(const std::string &dirname);
-
-    // DEPRECATED: Modern Env implementations should override RemoveDir instead.
-    //
-    // The default implementation calls RemoveDir, to support legacy Env user
-    // code that calls this method on modern Env implementations. Modern Env user
-    // code should call RemoveDir.
-    //
-    // A future release will remove this method.
-    Status DeleteDir(const std::string &dirname);
 
     // Store the size of fname in *file_size.
     Status GetFileSize(const std::string &fname, uint64_t *file_size);
@@ -176,6 +245,39 @@ namespace QuasDB
 
     // Sleep/delay the thread for the prescribed number of micro-seconds.
     void SleepForMicroseconds(int micros);
+
+  private:
+    void BackgroundThreadMain();
+
+    static void BackgroundThreadEntryPoint(Env *env)
+    {
+      env->BackgroundThreadMain();
+    }
+
+    // Stores the work item data in a Schedule() call.
+    //
+    // Instances are constructed on the thread calling Schedule() and used on the
+    // background thread.
+    //
+    // This structure is thread-safe beacuse it is immutable.
+    struct BackgroundWorkItem
+    {
+      explicit BackgroundWorkItem(void (*function)(void *arg), void *arg)
+          : function(function), arg(arg) {}
+
+      void (*const function)(void *);
+      void *const arg;
+    };
+
+    std::mutex background_work_mutex_;
+    std::condition_variable background_work_cv_;
+    bool started_background_thread_;
+
+    std::queue<BackgroundWorkItem> background_work_queue_;
+
+    LockTable locks_;      // Thread-safe.
+    Limiter mmap_limiter_; // Thread-safe.
+    Limiter fd_limiter_;   // Thread-safe.
   };
 
   class SequentialFile
@@ -184,9 +286,11 @@ namespace QuasDB
     SequentialFile() = default;
 
     SequentialFile(const SequentialFile &) = delete;
-    SequentialFile &operator=(const SequentialFile &) = delete;
+
     SequentialFile(std::string filename, int fd)
         : fd_(fd), filename_(filename) {}
+
+    SequentialFile &operator=(const SequentialFile &) = delete;
 
     ~SequentialFile()
     {
@@ -199,27 +303,9 @@ namespace QuasDB
     // May set "*result" to point at data in "scratch[0..n-1]", so
     // "scratch[0..n-1]" must be live when "*result" is used.
     // If an error was encountered, returns a non-OK status.
-
-    Status Read(size_t n, Slice *result, char *scratch)
-    {
-      Status status;
-      while (true)
-      {
-        ::ssize_t read_size = ::read(fd_, scratch, n);
-        if (read_size < 0)
-        {
-          if (errno == EINTR)
-          {
-            continue; // Retry
-          }
-          status = PosixError(filename_, errno);
-          break;
-        }
-        *result = Slice(scratch, read_size);
-        break;
-      }
-      return status;
-    }
+    //
+    // REQUIRES: External synchronization
+    Status Read(size_t n, Slice *result, char *scratch);
 
     // Skip "n" bytes from the file. This is guaranteed to be no
     // slower that reading the same data, but may be faster.
@@ -228,14 +314,7 @@ namespace QuasDB
     // file, and Skip will return OK.
     //
     // REQUIRES: External synchronization
-    Status Skip(uint64_t n)
-    {
-      if (::lseek(fd_, n, SEEK_CUR) == static_cast<off_t>(-1))
-      {
-        return PosixError(filename_, errno);
-      }
-      return Status::OK();
-    }
+    Status Skip(uint64_t n);
 
   private:
     const int fd_;
@@ -250,23 +329,7 @@ namespace QuasDB
     RandomAccessFile(const RandomAccessFile &) = delete;
     RandomAccessFile &operator=(const RandomAccessFile &) = delete;
 
-    RandomAccessFile(std::string filename, int fd, Limiter *fd_limiter)
-        : has_permanent_fd_(fd_limiter->Acquire()),
-          fd_(has_permanent_fd_ ? fd : -1),
-          fd_limiter_(fd_limiter),
-          filename_(std::move(filename))
-    {
-      if (!has_permanent_fd_)
-      {
-        assert(fd_ == -1);
-        ::close(fd); // The file will be opened on every read.
-      }
-    }
-
-    ~RandomAccessFile()
-    {
-      close(fd_);
-    }
+    virtual ~RandomAccessFile();
 
     // Read up to "n" bytes from the file starting at "offset".
     // "scratch[0..n-1]" may be written by this routine.  Sets "*result"
@@ -277,97 +340,8 @@ namespace QuasDB
     // status.
     //
     // Safe for concurrent use by multiple threads.
-    Status Read(uint64_t offset, size_t n, Slice *result,
-                char *scratch) const
-    {
-      int fd = fd_;
-      if (!has_permanent_fd_)
-      {
-        fd = ::open(filename_.c_str(), O_RDONLY | kOpenBaseFlags);
-        if (fd < 0)
-        {
-          return PosixError(filename_, errno);
-        }
-      }
-
-      assert(fd != -1);
-
-      Status status;
-      ssize_t read_size = ::pread(fd, scratch, n, static_cast<off_t>(offset));
-      *result = Slice(scratch, (read_size < 0) ? 0 : read_size);
-      if (read_size < 0)
-      {
-        // An error: return a non-ok status.
-        status = PosixError(filename_, errno);
-      }
-      if (!has_permanent_fd_)
-      {
-        // Close the temporary file descriptor opened earlier.
-        assert(fd != fd_);
-        ::close(fd);
-      }
-      return status;
-    }
-
-  private:
-    const bool has_permanent_fd_; // If false, the file is opened on every read.
-    const int fd_;                // -1 if has_permanent_fd_ is false.
-    Limiter *const fd_limiter_;
-    const std::string filename_;
-  };
-
-  class MmapReadableFile
-  {
-  public:
-    MmapReadableFile() = default;
-
-    MmapReadableFile(const MmapReadableFile &) = delete;
-    MmapReadableFile &operator=(const MmapReadableFile &) = delete;
-
-    // mmap_base[0, length-1] points to the memory-mapped contents of the file. It
-    // must be the result of a successful call to mmap(). This instances takes
-    // over the ownership of the region.
-    //
-    // |mmap_limiter| must outlive this instance. The caller must have already
-    // aquired the right to use one mmap region, which will be released when this
-    // instance is destroyed.
-    MmapReadableFile(std::string filename, char *mmap_base, size_t length,
-                     Limiter *mmap_limiter)
-        : mmap_base_(mmap_base),
-          length_(length),
-          mmap_limiter_(mmap_limiter),
-          filename_(std::move(filename)) {}
-
-    ~MmapReadableFile()
-    {
-      ::munmap(static_cast<void *>(mmap_base_), length_);
-      mmap_limiter_->Release();
-    }
-
-    // Read up to "n" bytes from the file starting at "offset".
-    // "scratch[0..n-1]" may be written by this routine.  Sets "*result"
-    // to the data that was read (including if fewer than "n" bytes were
-    // successfully read).  May set "*result" to point at data in
-    // "scratch[0..n-1]", so "scratch[0..n-1]" must be live when
-    // "*result" is used.  If an error was encountered, returns a non-OK
-    // status.
-    //
-    // Safe for concurrent use by multiple threads.
-    Status Read(uint64_t offset, size_t n, Slice *result,
-                char *scratch) const
-    {
-      if (offset + n > length_)
-      {
-        *result = Slice();
-        return PosixError(filename_, EINVAL);
-      }
-    }
-
-  private:
-    char *const mmap_base_;
-    const size_t length_;
-    Limiter *const mmap_limiter_;
-    const std::string filename_;
+    virtual Status Read(uint64_t offset, size_t n, Slice *result,
+                        char *scratch) const = 0;
   };
 
   class WritableFile
@@ -376,7 +350,6 @@ namespace QuasDB
     WritableFile() = default;
 
     WritableFile(const WritableFile &) = delete;
-    WritableFile &operator=(const WritableFile &) = delete;
 
     WritableFile(std::string filename, int fd)
         : pos_(0),
@@ -384,192 +357,30 @@ namespace QuasDB
           is_manifest_(IsManifest(filename)),
           filename_(std::move(filename)),
           dirname_(Dirname(filename_)) {}
+    WritableFile &operator=(const WritableFile &) = delete;
 
     ~WritableFile()
     {
       if (fd_ >= 0)
       {
+        // Ignoring any potential errors
         Close();
       }
     }
 
-    Status Append(const Slice &data)
-    {
-      size_t write_size = data.size();
-      const char *write_data = data.data();
-
-      // Fit as much as possible into buffer
-      size_t copy_size = std::min(write_size, kWritableFileBufferSize - pos_);
-      std::memcpy(buf_ + pos_, write_data, copy_size);
-      write_data += copy_size;
-      write_size -= copy_size;
-      pos_ += copy_size;
-      if (write_size == 0)
-      {
-        return Status::OK();
-      }
-
-      // Can't fit in buffer, so need to do at least one write.
-      Status status = FlushBuffer();
-      if (!status.ok())
-      {
-        return status;
-      }
-
-      // Small writes go to buffer, large writes are written directly.
-      if (write_size < kWritableFileBufferSize)
-      {
-        std::memcpy(buf_, write_data, write_size);
-        pos_ = write_size;
-        return Status::OK();
-      }
-      return WriteUnbuffered(write_data, write_size);
-    }
-
-    Status Close()
-    {
-      Status status = FlushBuffer();
-      const int close_result = ::close(fd_);
-      if (close_result < 0 && status.ok())
-      {
-        status = PosixError(filename_, errno);
-      }
-      fd_ = -1;
-      return status;
-    }
-
-    Status Flush()
-    {
-      return FlushBuffer();
-    }
-
-    Status Sync()
-    {
-      // Ensure new files referred to by the manifest are in the filesystem.
-      //
-      // This needs to happen before the manifest file is flushed to disk, to
-      // avoid crashing in a state where the manifest refers to files that are not
-      // yet on disk.
-      Status status = SyncDirIfManifest();
-      if (!status.ok())
-      {
-        return status;
-      }
-
-      status = FlushBuffer();
-      if (!status.ok())
-      {
-        return status;
-      }
-
-      return SyncFd(fd_, filename_);
-    }
+    Status Append(const Slice &data);
+    Status Close();
+    Status Flush();
+    Status Sync();
 
   private:
-    Status FlushBuffer()
-    {
-      Status status = WriteUnbuffered(buf_, pos_);
-      pos_ = 0;
-      return status;
-    }
-
-    Status WriteUnbuffered(const char *data, size_t size)
-    {
-      while (size > 0)
-      {
-        ssize_t write_result = ::write(fd_, data, size);
-        if (write_result < 0)
-        {
-          if (errno == EINTR)
-          {
-            continue; // Retry
-          }
-          return PosixError(filename_, errno);
-        }
-        data += write_result;
-        size -= write_result;
-      }
-      return Status::OK();
-    }
-
-    Status SyncDirIfManifest()
-    {
-      Status status;
-      if (!is_manifest_)
-      {
-        return status;
-      }
-
-      int fd = ::open(dirname_.c_str(), O_RDONLY | kOpenBaseFlags);
-      if (fd < 0)
-      {
-        status = PosixError(dirname_, errno);
-      }
-      else
-      {
-        status = SyncFd(fd, dirname_);
-        ::close(fd);
-      }
-      return status;
-    }
-
-    // Ensures that all the caches associated with the given file descriptor's
-    // data are flushed all the way to durable media, and can withstand power
-    // failures.
-    //
-    // The path argument is only used to populate the description string in the
-    // returned Status if an error occurs.
-    static Status SyncFd(int fd, const std::string &fd_path)
-    {
-      bool sync_success = ::fsync(fd) == 0;
-      if (sync_success)
-      {
-        return Status::OK();
-      }
-      return PosixError(fd_path, errno);
-    }
-
-    // Returns the directory name in a path pointing to a file.
-    //
-    // Returns "." if the path does not contain any directory separator.
-    static std::string Dirname(const std::string &filename)
-    {
-      std::string::size_type separator_pos = filename.rfind('/');
-      if (separator_pos == std::string::npos)
-      {
-        return std::string(".");
-      }
-      // The filename component should not contain a path separator. If it does,
-      // the splitting was done incorrectly.
-      assert(filename.find('/', separator_pos + 1) == std::string::npos);
-
-      return filename.substr(0, separator_pos);
-    }
-
-    // Extracts the file name from a path pointing to a file.
-    //
-    // The returned Slice points to |filename|'s data buffer, so it is only valid
-    // while |filename| is alive and unchanged.
-    static Slice Basename(const std::string &filename)
-    {
-      std::string::size_type separator_pos = filename.rfind('/');
-      if (separator_pos == std::string::npos)
-      {
-        return Slice(filename);
-      }
-      // The filename component should not contain a path separator. If it does,
-      // the splitting was done incorrectly.
-      assert(filename.find('/', separator_pos + 1) == std::string::npos);
-
-      return Slice(filename.data() + separator_pos + 1,
-                   filename.length() - separator_pos - 1);
-    }
-
-    // True if the given file is a manifest file.
-    static bool IsManifest(const std::string &filename)
-    {
-      return Basename(filename).starts_with("MANIFEST");
-    }
+    Status FlushBuffer();
+    Status WriteUnbuffered(const char *data, size_t size);
+    Status SyncDirIfManifest();
+    static Status SyncFd(int fd, const std::string &fd_path);
+    static std::string Dirname(const std::string &filename);
+    static Slice Basename(const std::string &filename);
+    static bool IsManifest(const std::string &filename);
 
     // buf_[0, pos_ - 1] contains data to be written to fd_.
     char buf_[kWritableFileBufferSize];
@@ -581,48 +392,16 @@ namespace QuasDB
     const std::string dirname_; // The directory of filename_.
   };
 
-  // Tracks the files locked by PosixEnv::LockFile().
-  //
-  // We maintain a separate set instead of relying on fcntl(F_SETLK) because
-  // fcntl(F_SETLK) does not provide any protection against multiple uses from the
-  // same process.
-  //
-  // Instances are thread-safe because all member data is guarded by a mutex.
-  class LockTable
-  {
-  public:
-    bool Insert(const std::string &fname)
-    {
-      mu_.Lock();
-      bool succeeded = locked_files_.insert(fname).second;
-      mu_.Unlock();
-      return succeeded;
-    }
-
-    void Remove(const std::string &fname)
-    {
-      mu_.Lock();
-      locked_files_.erase(fname);
-      mu_.Unlock();
-    }
-
-  private:
-    std::mutex mu_;
-    std::set<std::string> locked_files_;
-  };
-
   class Logger
   {
   public:
     Logger() = default;
-
+    // Creates a logger that writes to the given file.
+    //
+    // The PosixLogger instance takes ownership of the file handle.
+    explicit Logger(std::FILE *fp) : fp_(fp) { assert(fp != nullptr); }
     Logger(const Logger &) = delete;
     Logger &operator=(const Logger &) = delete;
-
-    explicit Logger(std::FILE *fp) : fp_(fp)
-    {
-      assert(fp != nullptr);
-    }
 
     ~Logger()
     {
@@ -630,118 +409,11 @@ namespace QuasDB
     }
 
     // Write an entry to the log file with the specified format.
-    void Logv(const char *format, std::va_list arguments)
-    {
-      // Record the time as close to the Logv() call as possible.
-      struct ::timeval now_timeval;
-      ::gettimeofday(&now_timeval, nullptr);
-      const std::time_t now_seconds = now_timeval.tv_sec;
-      struct std::tm now_components;
-      ::localtime_r(&now_seconds, &now_components);
-
-      // Record the thread ID.
-      constexpr const int kMaxThreadIdSize = 32;
-      std::ostringstream thread_stream;
-      thread_stream << std::this_thread::get_id();
-      std::string thread_id = thread_stream.str();
-      if (thread_id.size() > kMaxThreadIdSize)
-      {
-        thread_id.resize(kMaxThreadIdSize);
-      }
-
-      // We first attempt to print into a stack-allocated buffer. If this attempt
-      // fails, we make a second attempt with a dynamically allocated buffer.
-      constexpr const int kStackBufferSize = 512;
-      char stack_buffer[kStackBufferSize];
-      static_assert(sizeof(stack_buffer) == static_cast<size_t>(kStackBufferSize),
-                    "sizeof(char) is expected to be 1 in C++");
-
-      int dynamic_buffer_size = 0; // Computed in the first iteration.
-      for (int iteration = 0; iteration < 2; ++iteration)
-      {
-        const int buffer_size =
-            (iteration == 0) ? kStackBufferSize : dynamic_buffer_size;
-        char *const buffer =
-            (iteration == 0) ? stack_buffer : new char[dynamic_buffer_size];
-
-        // Print the header into the buffer.
-        int buffer_offset = std::snprintf(
-            buffer, buffer_size, "%04d/%02d/%02d-%02d:%02d:%02d.%06d %s ",
-            now_components.tm_year + 1900, now_components.tm_mon + 1,
-            now_components.tm_mday, now_components.tm_hour, now_components.tm_min,
-            now_components.tm_sec, static_cast<int>(now_timeval.tv_usec),
-            thread_id.c_str());
-
-        // The header can be at most 28 characters (10 date + 15 time +
-        // 3 delimiters) plus the thread ID, which should fit comfortably into the
-        // static buffer.
-        assert(buffer_offset <= 28 + kMaxThreadIdSize);
-        static_assert(28 + kMaxThreadIdSize < kStackBufferSize,
-                      "stack-allocated buffer may not fit the message header");
-        assert(buffer_offset < buffer_size);
-
-        // Print the message into the buffer.
-        std::va_list arguments_copy;
-        va_copy(arguments_copy, arguments);
-        buffer_offset +=
-            std::vsnprintf(buffer + buffer_offset, buffer_size - buffer_offset,
-                           format, arguments_copy);
-        va_end(arguments_copy);
-
-        // The code below may append a newline at the end of the buffer, which
-        // requires an extra character.
-        if (buffer_offset >= buffer_size - 1)
-        {
-          // The message did not fit into the buffer.
-          if (iteration == 0)
-          {
-            // Re-run the loop and use a dynamically-allocated buffer. The buffer
-            // will be large enough for the log message, an extra newline and a
-            // null terminator.
-            dynamic_buffer_size = buffer_offset + 2;
-            continue;
-          }
-
-          // The dynamically-allocated buffer was incorrectly sized. This should
-          // not happen, assuming a correct implementation of std::(v)snprintf.
-          // Fail in tests, recover by truncating the log message in production.
-          assert(false);
-          buffer_offset = buffer_size - 1;
-        }
-        // Add a newline if necessary.
-        if (buffer[buffer_offset - 1] != '\n')
-        {
-          buffer[buffer_offset] = '\n';
-          ++buffer_offset;
-        }
-
-        assert(buffer_offset <= buffer_size);
-        std::fwrite(buffer, 1, buffer_offset, fp_);
-        std::fflush(fp_);
-
-        if (iteration != 0)
-        {
-          delete[] buffer;
-        }
-        break;
-      }
-    }
+    void Logv(const char *format, std::va_list ap);
 
   private:
     std::FILE *const fp_;
   };
-
-  int LockOrUnlock(int fd, bool lock)
-  {
-    errno = 0;
-    struct ::flock file_lock_info;
-    std::memset(&file_lock_info, 0, sizeof(file_lock_info));
-    file_lock_info.l_type = (lock ? F_WRLCK : F_UNLCK);
-    file_lock_info.l_whence = SEEK_SET;
-    file_lock_info.l_start = 0;
-    file_lock_info.l_len = 0; // Lock/unlock entire file.
-    return ::fcntl(fd, F_SETLK, &file_lock_info);
-  }
 
   class FileLock
   {
@@ -750,12 +422,10 @@ namespace QuasDB
 
     FileLock(const FileLock &) = delete;
     FileLock &operator=(const FileLock &) = delete;
-
     FileLock(int fd, std::string filename)
         : fd_(fd), filename_(std::move(filename)) {}
 
-    ~FileLock();
-
+    virtual ~FileLock();
     int fd() const { return fd_; }
     const std::string &filename() const { return filename_; }
 
@@ -765,9 +435,7 @@ namespace QuasDB
   };
 
   void Log(Logger *info_log, const char *format, ...)
-  {
-    __attribute__((__format__(__printf__, 2, 3)));
-  }
+      __attribute__((__format__(__printf__, 2, 3)));
 
   // A utility routine: write "data" to the named file.
   Status WriteStringToFile(Env *env, const Slice &data,

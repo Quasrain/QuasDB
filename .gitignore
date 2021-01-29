@@ -2,4 +2,4 @@
 /bazel-out
 /bazel-QuasDB
 /bazel-testlogs
-/.vscode
+.vscode/*

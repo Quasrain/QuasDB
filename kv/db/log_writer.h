@@ -4,6 +4,7 @@
 #include "log_format.h"
 #include "kv/include/slice.h"
 #include "kv/include/status.h"
+#include "kv/include/env.h"
 
 namespace QuasDB
 {

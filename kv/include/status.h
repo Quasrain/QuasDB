@@ -3,6 +3,8 @@ A Status encapsulates the result of an operation.  It may indicate success, or i
 Multiple threads can invoke const methods on a Status without external synchronization, but if any of the threads may call a non-const method, all threads accessing the same Status must use external synchronization.
 */
 
+#pragma once
+
 #include <algorithm>
 #include <string>
 

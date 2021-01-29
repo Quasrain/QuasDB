@@ -10,6 +10,8 @@ cc_library(
         "error/error_system.h",
         # kv
         "kv/db/log_format.h",
+        "kv/db/log_reader.h",
+        "kv/db/log_reader.cpp",
         "kv/db/log_writer.h",
         "kv/db/log_writer.cpp",
         "kv/include/cache.h",

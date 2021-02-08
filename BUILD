@@ -10,11 +10,16 @@ cc_library(
         "error/error_system.h",
         # kv
         "kv/db/dbformat.h",
+        "kv/db/dbformat.cpp",
+        "kv/db/filename.h",
+        "kv/db/filename.cpp",
         "kv/db/log_format.h",
         "kv/db/log_reader.h",
         "kv/db/log_reader.cpp",
         "kv/db/log_writer.h",
         "kv/db/log_writer.cpp",
+        "kv/db/memtable.h",
+        "kv/db/memtable.cpp",
         "kv/db/skiplist.h",
         "kv/include/cache.h",
         "kv/include/comparator.h",
@@ -148,4 +153,30 @@ cc_binary(
     linkopts = [
         "-std=c++17"
     ]
+)
+
+# https://docs.bazel.build/versions/master/be/c-cpp.html#cc_binary
+cc_binary(
+    name = "testfilename",
+    srcs = [
+        "kv/test/filename_test.cpp"
+        ],
+    deps = [
+        ":base",
+        "@gtest//:gtest",
+        "@gtest//:gtest_main"
+    ],
+)
+
+# https://docs.bazel.build/versions/master/be/c-cpp.html#cc_binary
+cc_binary(
+    name = "testdbformat",
+    srcs = [
+        "kv/test/dbformat_test.cpp"
+        ],
+    deps = [
+        ":base",
+        "@gtest//:gtest",
+        "@gtest//:gtest_main"
+    ],
 )

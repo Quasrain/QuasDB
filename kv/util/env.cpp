@@ -94,7 +94,7 @@ namespace QuasDB
       }
     }
 
-    ~PosixRandomAccessFile() override
+    ~PosixRandomAccessFile()
     {
       if (has_permanent_fd_)
       {
@@ -165,7 +165,7 @@ namespace QuasDB
           mmap_limiter_(mmap_limiter),
           filename_(std::move(filename)) {}
 
-    ~PosixMmapReadableFile() override
+    ~PosixMmapReadableFile()
     {
       ::munmap(static_cast<void *>(mmap_base_), length_);
       mmap_limiter_->Release();
@@ -268,6 +268,25 @@ namespace QuasDB
     Status status = WriteUnbuffered(buf_, pos_);
     pos_ = 0;
     return status;
+  }
+
+  Status WritableFile::WriteUnbuffered(const char *data, size_t size)
+  {
+    while (size > 0)
+    {
+      ssize_t write_result = ::write(fd_, data, size);
+      if (write_result < 0)
+      {
+        if (errno == EINTR)
+        {
+          continue; // Retry
+        }
+        return PosixError(filename_, errno);
+      }
+      data += write_result;
+      size -= write_result;
+    }
+    return Status::OK();
   }
 
   Status WritableFile::SyncDirIfManifest()

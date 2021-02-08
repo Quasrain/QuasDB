@@ -23,17 +23,17 @@ namespace QuasDB
   class WritableFile;
 
   // Set by EnvPosixTestHelper::SetReadOnlyMMapLimit() and MaxOpenFiles().
-  int g_open_read_only_file_limit = -1;
+  static int g_open_read_only_file_limit = -1;
 
   // Up to 1000 mmap regions for 64-bit binaries; none for 32-bit.
-  constexpr const int kDefaultMmapLimit = (sizeof(void *) >= 8) ? 1000 : 0;
+  static constexpr const int kDefaultMmapLimit = (sizeof(void *) >= 8) ? 1000 : 0;
 
   // Can be set using EnvPosixTestHelper::SetReadOnlyMMapLimit().
-  int g_mmap_limit = kDefaultMmapLimit;
+  static int g_mmap_limit = kDefaultMmapLimit;
 
-  constexpr const int kOpenBaseFlags = 0;
+  static constexpr const int kOpenBaseFlags = 0;
 
-  constexpr const size_t kWritableFileBufferSize = 65536;
+  static constexpr const size_t kWritableFileBufferSize = 65536;
 
   // Helper class to limit resource usage to avoid exhaustion.
   // Currently used to limit read-only file descriptors and mmap file usage
@@ -329,7 +329,7 @@ namespace QuasDB
     RandomAccessFile(const RandomAccessFile &) = delete;
     RandomAccessFile &operator=(const RandomAccessFile &) = delete;
 
-    virtual ~RandomAccessFile();
+    ~RandomAccessFile() = default;
 
     // Read up to "n" bytes from the file starting at "offset".
     // "scratch[0..n-1]" may be written by this routine.  Sets "*result"
@@ -425,7 +425,7 @@ namespace QuasDB
     FileLock(int fd, std::string filename)
         : fd_(fd), filename_(std::move(filename)) {}
 
-    virtual ~FileLock();
+    virtual ~FileLock() = default;
     int fd() const { return fd_; }
     const std::string &filename() const { return filename_; }
 

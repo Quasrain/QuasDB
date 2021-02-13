@@ -329,7 +329,7 @@ namespace QuasDB
     RandomAccessFile(const RandomAccessFile &) = delete;
     RandomAccessFile &operator=(const RandomAccessFile &) = delete;
 
-    ~RandomAccessFile() = default;
+    virtual ~RandomAccessFile() = default;
 
     // Read up to "n" bytes from the file starting at "offset".
     // "scratch[0..n-1]" may be written by this routine.  Sets "*result"

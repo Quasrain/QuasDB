@@ -21,6 +21,8 @@ cc_library(
         "kv/db/memtable.h",
         "kv/db/memtable.cpp",
         "kv/db/skiplist.h",
+        "kv/db/table_cache.h",
+        "kv/db/table_cache.cpp",
         "kv/include/cache.h",
         "kv/include/comparator.h",
         "kv/include/db.h",
@@ -33,6 +35,13 @@ cc_library(
         "kv/include/table_builder.h",
         "kv/include/table.h",
         "kv/include/write_batch.h",
+        "kv/table/block_builder.h",
+        "kv/table/block_builder.cpp",
+        "kv/table/block.h",
+        "kv/table/block.cpp",
+        "kv/table/filter_block.h",
+        "kv/table/filter_block.cpp",
+        "kv/table/format.h",
         "kv/util/arena.h",
         "kv/util/arena.cpp",
         "kv/util/bloom.cpp",
@@ -173,6 +182,19 @@ cc_binary(
     name = "testdbformat",
     srcs = [
         "kv/test/dbformat_test.cpp"
+        ],
+    deps = [
+        ":base",
+        "@gtest//:gtest",
+        "@gtest//:gtest_main"
+    ],
+)
+
+# https://docs.bazel.build/versions/master/be/c-cpp.html#cc_binary
+cc_binary(
+    name = "testfilter_block",
+    srcs = [
+        "kv/test/filter_block_test.cpp"
         ],
     deps = [
         ":base",

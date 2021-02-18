@@ -8,7 +8,7 @@ Multiple threads can invoke const methods on a Status without external synchroni
 #include <algorithm>
 #include <string>
 
-#include "kv/include/slice.h"
+#include "slice.h"
 
 namespace QuasDB
 {

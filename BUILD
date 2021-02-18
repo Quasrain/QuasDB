@@ -9,6 +9,8 @@ cc_library(
         "error/error_all.h",
         "error/error_system.h",
         # kv
+        "kv/lib/libsnappy.a",
+        "kv/lib/libcrc32c.a",
         "kv/db/dbformat.h",
         "kv/db/dbformat.cpp",
         "kv/db/filename.h",
@@ -42,6 +44,7 @@ cc_library(
         "kv/table/filter_block.h",
         "kv/table/filter_block.cpp",
         "kv/table/format.h",
+        "kv/table/format.cpp",
         "kv/util/arena.h",
         "kv/util/arena.cpp",
         "kv/util/bloom.cpp",
@@ -66,20 +69,22 @@ cc_library(
         "-std=c++17",
         "-lboost_system",
         "-lboost_filesystem"
-    ],
-    deps = [],
+    ]
 )
 
 # https://docs.bazel.build/versions/master/be/c-cpp.html#cc_binary
 cc_binary(
     name = "testcrc",
     srcs = [
-        "kv/test/crc32c_test.cpp"
+        "kv/test/crc32c_test.cpp",
+        "kv/lib/libgtest.a",
+        "kv/lib/libgtest_main.a"
         ],
+    linkopts = [
+        "-pthread"
+    ],
     deps = [
-        ":base",
-        "@gtest//:gtest",
-        "@gtest//:gtest_main"
+        ":base"
     ],
 )
 
@@ -87,12 +92,15 @@ cc_binary(
 cc_binary(
     name = "testhash",
     srcs = [
-        "kv/test/hash_test.cpp"
+        "kv/test/hash_test.cpp",
+        "kv/lib/libgtest.a",
+        "kv/lib/libgtest_main.a"
         ],
+    linkopts = [
+        "-pthread"
+    ],
     deps = [
-        ":base",
-        "@gtest//:gtest",
-        "@gtest//:gtest_main"
+        ":base"
     ],
 )
 
@@ -100,12 +108,15 @@ cc_binary(
 cc_binary(
     name = "teststatus",
     srcs = [
-        "kv/test/status_test.cpp"
+        "kv/test/status_test.cpp",
+        "kv/lib/libgtest.a",
+        "kv/lib/libgtest_main.a"
         ],
+    linkopts = [
+        "-pthread"
+    ],
     deps = [
-        ":base",
-        "@gtest//:gtest",
-        "@gtest//:gtest_main"
+        ":base"
     ],
 )
 
@@ -113,12 +124,15 @@ cc_binary(
 cc_binary(
     name = "testno_destructor",
     srcs = [
-        "kv/test/no_destructor_test.cpp"
+        "kv/test/no_destructor_test.cpp",
+        "kv/lib/libgtest.a",
+        "kv/lib/libgtest_main.a"
         ],
+    linkopts = [
+        "-pthread"
+    ],
     deps = [
-        ":base",
-        "@gtest//:gtest",
-        "@gtest//:gtest_main"
+        ":base"
     ],
 )
 
@@ -126,12 +140,15 @@ cc_binary(
 cc_binary(
     name = "testlogging",
     srcs = [
-        "kv/test/logging_test.cpp"
+        "kv/test/logging_test.cpp",
+        "kv/lib/libgtest.a",
+        "kv/lib/libgtest_main.a"
         ],
+    linkopts = [
+        "-pthread"
+    ],
     deps = [
-        ":base",
-        "@gtest//:gtest",
-        "@gtest//:gtest_main"
+        ":base"
     ],
 )
 
@@ -139,12 +156,15 @@ cc_binary(
 cc_binary(
     name = "testcache",
     srcs = [
-        "kv/test/cache_test.cpp"
+        "kv/test/cache_test.cpp",
+        "kv/lib/libgtest.a",
+        "kv/lib/libgtest_main.a"
         ],
+    linkopts = [
+        "-pthread"
+    ],
     deps = [
-        ":base",
-        "@gtest//:gtest",
-        "@gtest//:gtest_main"
+        ":base"
     ],
 )
 
@@ -152,28 +172,32 @@ cc_binary(
 cc_binary(
     name = "testskiplist",
     srcs = [
-        "kv/test/skiplist_test.cpp"
+        "kv/test/skiplist_test.cpp",
+        "kv/lib/libgtest.a",
+        "kv/lib/libgtest_main.a"
         ],
-    deps = [
-        ":base",
-        "@gtest//:gtest",
-        "@gtest//:gtest_main"
-    ],
     linkopts = [
+        "-pthread",
         "-std=c++17"
-    ]
+    ],
+    deps = [
+        ":base"
+    ],
 )
 
 # https://docs.bazel.build/versions/master/be/c-cpp.html#cc_binary
 cc_binary(
     name = "testfilename",
     srcs = [
-        "kv/test/filename_test.cpp"
+        "kv/test/filename_test.cpp",
+        "kv/lib/libgtest.a",
+        "kv/lib/libgtest_main.a"
         ],
+    linkopts = [
+        "-pthread"
+    ],
     deps = [
-        ":base",
-        "@gtest//:gtest",
-        "@gtest//:gtest_main"
+        ":base"
     ],
 )
 
@@ -181,12 +205,15 @@ cc_binary(
 cc_binary(
     name = "testdbformat",
     srcs = [
-        "kv/test/dbformat_test.cpp"
+        "kv/test/dbformat_test.cpp",
+        "kv/lib/libgtest.a",
+        "kv/lib/libgtest_main.a"
         ],
+    linkopts = [
+        "-pthread"
+    ],
     deps = [
-        ":base",
-        "@gtest//:gtest",
-        "@gtest//:gtest_main"
+        ":base"
     ],
 )
 
@@ -194,11 +221,14 @@ cc_binary(
 cc_binary(
     name = "testfilter_block",
     srcs = [
-        "kv/test/filter_block_test.cpp"
+        "kv/test/filter_block_test.cpp",
+        "kv/lib/libgtest.a",
+        "kv/lib/libgtest_main.a"
         ],
+    linkopts = [
+        "-pthread"
+    ],
     deps = [
-        ":base",
-        "@gtest//:gtest",
-        "@gtest//:gtest_main"
+        ":base"
     ],
 )

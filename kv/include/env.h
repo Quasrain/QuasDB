@@ -1,14 +1,8 @@
 #pragma once
 
-#include <atomic>
-#include <condition_variable>
 #include <cstdarg>
 #include <cstdint>
-#include <mutex>
-#include <queue>
-#include <set>
 #include <string>
-#include <unistd.h>
 #include <vector>
 
 #include "kv/include/status.h"
@@ -22,87 +16,6 @@ namespace QuasDB
   class Slice;
   class WritableFile;
 
-  // Set by EnvPosixTestHelper::SetReadOnlyMMapLimit() and MaxOpenFiles().
-  static int g_open_read_only_file_limit = -1;
-
-  // Up to 1000 mmap regions for 64-bit binaries; none for 32-bit.
-  static constexpr const int kDefaultMmapLimit = (sizeof(void *) >= 8) ? 1000 : 0;
-
-  // Can be set using EnvPosixTestHelper::SetReadOnlyMMapLimit().
-  static int g_mmap_limit = kDefaultMmapLimit;
-
-  static constexpr const int kOpenBaseFlags = 0;
-
-  static constexpr const size_t kWritableFileBufferSize = 65536;
-
-  // Helper class to limit resource usage to avoid exhaustion.
-  // Currently used to limit read-only file descriptors and mmap file usage
-  // so that we do not run out of file descriptors or virtual memory, or run into
-  // kernel performance problems for very large databases.
-  class Limiter
-  {
-  public:
-    // Limit maximum number of resources to |max_acquires|.
-    Limiter(int max_acquires) : acquires_allowed_(max_acquires) {}
-
-    Limiter(const Limiter &) = delete;
-    Limiter operator=(const Limiter &) = delete;
-
-    // If another resource is available, acquire it and return true.
-    // Else return false.
-    bool Acquire()
-    {
-      int old_acquires_allowed =
-          acquires_allowed_.fetch_sub(1, std::memory_order_relaxed);
-
-      if (old_acquires_allowed > 0)
-        return true;
-
-      acquires_allowed_.fetch_add(1, std::memory_order_relaxed);
-      return false;
-    }
-
-    // Release a resource acquired by a previous call to Acquire() that returned
-    // true.
-    void Release() { acquires_allowed_.fetch_add(1, std::memory_order_relaxed); }
-
-  private:
-    // The number of available resources.
-    //
-    // This is a counter and is not tied to the invariants of any other class, so
-    // it can be operated on safely using std::memory_order_relaxed.
-    std::atomic<int> acquires_allowed_;
-  };
-
-  // Tracks the files locked by PosixEnv::LockFile().
-  //
-  // We maintain a separate set instead of relying on fcntl(F_SETLK) because
-  // fcntl(F_SETLK) does not provide any protection against multiple uses from the
-  // same process.
-  //
-  // Instances are thread-safe because all member data is guarded by a mutex.
-  class LockTable
-  {
-  public:
-    bool Insert(const std::string &fname)
-    {
-      mu_.lock();
-      bool succeeded = locked_files_.insert(fname).second;
-      mu_.unlock();
-      return succeeded;
-    }
-    void Remove(const std::string &fname)
-    {
-      mu_.lock();
-      locked_files_.erase(fname);
-      mu_.unlock();
-    }
-
-  private:
-    std::mutex mu_;
-    std::set<std::string> locked_files_;
-  };
-
   class Env
   {
   public:
@@ -111,19 +24,13 @@ namespace QuasDB
     Env(const Env &) = delete;
     Env &operator=(const Env &) = delete;
 
-    ~Env()
-    {
-      static const char msg[] =
-          "PosixEnv singleton destroyed. Unsupported behavior!\n";
-      std::fwrite(msg, 1, sizeof(msg), stderr);
-      std::abort();
-    }
+    virtual ~Env();
 
     // Return a default environment suitable for the current operating
     // system.  Sophisticated users may wish to provide their own Env
     // implementation instead of relying on this default environment.
     //
-    // The result of Default() belongs to leveldb and must never be deleted.
+    // The result of Default() belongs to QuasDB and must never be deleted.
     static Env *Default();
 
     // Create an object that sequentially reads the file with the specified name.
@@ -133,8 +40,8 @@ namespace QuasDB
     // NotFound status when the file does not exist.
     //
     // The returned file will only be accessed by one thread at a time.
-    Status NewSequentialFile(const std::string &fname,
-                             SequentialFile **result);
+    virtual Status NewSequentialFile(const std::string &fname,
+                                     SequentialFile **result) = 0;
 
     // Create an object supporting random-access reads from the file with the
     // specified name.  On success, stores a pointer to the new file in
@@ -144,8 +51,8 @@ namespace QuasDB
     // not exist.
     //
     // The returned file may be concurrently accessed by multiple threads.
-    Status NewRandomAccessFile(const std::string &fname,
-                               RandomAccessFile **result);
+    virtual Status NewRandomAccessFile(const std::string &fname,
+                                       RandomAccessFile **result) = 0;
 
     // Create an object that writes to a new file with the specified
     // name.  Deletes any existing file with the same name and creates a
@@ -154,8 +61,8 @@ namespace QuasDB
     // returns non-OK.
     //
     // The returned file will only be accessed by one thread at a time.
-    Status NewWritableFile(const std::string &fname,
-                           WritableFile **result);
+    virtual Status NewWritableFile(const std::string &fname,
+                                   WritableFile **result) = 0;
 
     // Create an object that either appends to an existing file, or
     // writes to a new file (if the file does not exist to begin with).
@@ -164,38 +71,33 @@ namespace QuasDB
     // non-OK.
     //
     // The returned file will only be accessed by one thread at a time.
-    //
-    // May return an IsNotSupportedError error if this Env does
-    // not allow appending to an existing file.  Users of Env (including
-    // the leveldb implementation) must be prepared to deal with
-    // an Env that does not support appending.
-    Status NewAppendableFile(const std::string &fname,
-                             WritableFile **result);
+    virtual Status NewAppendableFile(const std::string &fname,
+                                     WritableFile **result);
 
     // Returns true iff the named file exists.
-    bool FileExists(const std::string &fname);
+    virtual bool FileExists(const std::string &fname) = 0;
 
     // Store in *result the names of the children of the specified directory.
     // The names are relative to "dir".
     // Original contents of *results are dropped.
-    Status GetChildren(const std::string &dir,
-                       std::vector<std::string> *result);
+    virtual Status GetChildren(const std::string &dir,
+                               std::vector<std::string> *result) = 0;
 
     // Delete the named file.
-    Status RemoveFile(const std::string &fname);
+    virtual Status RemoveFile(const std::string &fname);
 
     // Create the specified directory.
-    Status CreateDir(const std::string &dirname);
+    virtual Status CreateDir(const std::string &dirname) = 0;
 
     // Delete the specified directory.
-    Status RemoveDir(const std::string &dirname);
+    virtual Status RemoveDir(const std::string &dirname);
 
     // Store the size of fname in *file_size.
-    Status GetFileSize(const std::string &fname, uint64_t *file_size);
+    virtual Status GetFileSize(const std::string &fname, uint64_t *file_size) = 0;
 
     // Rename file src to target.
-    Status RenameFile(const std::string &src,
-                      const std::string &target);
+    virtual Status RenameFile(const std::string &src,
+                              const std::string &target) = 0;
 
     // Lock the specified file.  Used to prevent concurrent access to
     // the same db by multiple processes.  On failure, stores nullptr in
@@ -211,12 +113,12 @@ namespace QuasDB
     // to go away.
     //
     // May create the named file if it does not already exist.
-    Status LockFile(const std::string &fname, FileLock **lock);
+    virtual Status LockFile(const std::string &fname, FileLock **lock) = 0;
 
     // Release the lock acquired by a previous successful call to LockFile.
     // REQUIRES: lock was returned by a successful LockFile() call
     // REQUIRES: lock has not already been unlocked.
-    Status UnlockFile(FileLock *lock);
+    virtual Status UnlockFile(FileLock *lock) = 0;
 
     // Arrange to run "(*function)(arg)" once in a background thread.
     //
@@ -224,78 +126,39 @@ namespace QuasDB
     // added to the same Env may run concurrently in different threads.
     // I.e., the caller may not assume that background work items are
     // serialized.
-    void Schedule(void (*function)(void *arg), void *arg);
+    virtual void Schedule(void (*function)(void *arg), void *arg) = 0;
 
     // Start a new thread, invoking "function(arg)" within the new thread.
     // When "function(arg)" returns, the thread will be destroyed.
-    void StartThread(void (*function)(void *arg), void *arg);
+    virtual void StartThread(void (*function)(void *arg), void *arg) = 0;
 
     // *path is set to a temporary directory that can be used for testing. It may
     // or may not have just been created. The directory may or may not differ
     // between runs of the same process, but subsequent calls will return the
     // same directory.
-    Status GetTestDirectory(std::string *path);
+    virtual Status GetTestDirectory(std::string *path) = 0;
 
     // Create and return a log file for storing informational messages.
-    Status NewLogger(const std::string &fname, Logger **result);
+    virtual Status NewLogger(const std::string &fname, Logger **result) = 0;
 
     // Returns the number of micro-seconds since some fixed point in time. Only
     // useful for computing deltas of time.
-    uint64_t NowMicros();
+    virtual uint64_t NowMicros() = 0;
 
     // Sleep/delay the thread for the prescribed number of micro-seconds.
-    void SleepForMicroseconds(int micros);
-
-  private:
-    void BackgroundThreadMain();
-
-    static void BackgroundThreadEntryPoint(Env *env)
-    {
-      env->BackgroundThreadMain();
-    }
-
-    // Stores the work item data in a Schedule() call.
-    //
-    // Instances are constructed on the thread calling Schedule() and used on the
-    // background thread.
-    //
-    // This structure is thread-safe beacuse it is immutable.
-    struct BackgroundWorkItem
-    {
-      explicit BackgroundWorkItem(void (*function)(void *arg), void *arg)
-          : function(function), arg(arg) {}
-
-      void (*const function)(void *);
-      void *const arg;
-    };
-
-    std::mutex background_work_mutex_;
-    std::condition_variable background_work_cv_;
-    bool started_background_thread_;
-
-    std::queue<BackgroundWorkItem> background_work_queue_;
-
-    LockTable locks_;      // Thread-safe.
-    Limiter mmap_limiter_; // Thread-safe.
-    Limiter fd_limiter_;   // Thread-safe.
+    virtual void SleepForMicroseconds(int micros) = 0;
   };
 
+  // A file abstraction for reading sequentially through a file
   class SequentialFile
   {
   public:
     SequentialFile() = default;
 
     SequentialFile(const SequentialFile &) = delete;
-
-    SequentialFile(std::string filename, int fd)
-        : fd_(fd), filename_(filename) {}
-
     SequentialFile &operator=(const SequentialFile &) = delete;
 
-    ~SequentialFile()
-    {
-      close(fd_);
-    }
+    virtual ~SequentialFile();
 
     // Read up to "n" bytes from the file.  "scratch[0..n-1]" may be
     // written by this routine.  Sets "*result" to the data that was
@@ -305,7 +168,7 @@ namespace QuasDB
     // If an error was encountered, returns a non-OK status.
     //
     // REQUIRES: External synchronization
-    Status Read(size_t n, Slice *result, char *scratch);
+    virtual Status Read(size_t n, Slice *result, char *scratch) = 0;
 
     // Skip "n" bytes from the file. This is guaranteed to be no
     // slower that reading the same data, but may be faster.
@@ -314,13 +177,10 @@ namespace QuasDB
     // file, and Skip will return OK.
     //
     // REQUIRES: External synchronization
-    Status Skip(uint64_t n);
-
-  private:
-    const int fd_;
-    const std::string filename_;
+    virtual Status Skip(uint64_t n) = 0;
   };
 
+  // A file abstraction for randomly reading the contents of a file.
   class RandomAccessFile
   {
   public:
@@ -329,7 +189,7 @@ namespace QuasDB
     RandomAccessFile(const RandomAccessFile &) = delete;
     RandomAccessFile &operator=(const RandomAccessFile &) = delete;
 
-    virtual ~RandomAccessFile() = default;
+    virtual ~RandomAccessFile();
 
     // Read up to "n" bytes from the file starting at "offset".
     // "scratch[0..n-1]" may be written by this routine.  Sets "*result"
@@ -344,77 +204,41 @@ namespace QuasDB
                         char *scratch) const = 0;
   };
 
+  // A file abstraction for sequential writing.  The implementation
+  // must provide buffering since callers may append small fragments
+  // at a time to the file.
   class WritableFile
   {
   public:
     WritableFile() = default;
 
     WritableFile(const WritableFile &) = delete;
-
-    WritableFile(std::string filename, int fd)
-        : pos_(0),
-          fd_(fd),
-          is_manifest_(IsManifest(filename)),
-          filename_(std::move(filename)),
-          dirname_(Dirname(filename_)) {}
     WritableFile &operator=(const WritableFile &) = delete;
 
-    ~WritableFile()
-    {
-      if (fd_ >= 0)
-      {
-        // Ignoring any potential errors
-        Close();
-      }
-    }
+    virtual ~WritableFile();
 
-    Status Append(const Slice &data);
-    Status Close();
-    Status Flush();
-    Status Sync();
-
-  private:
-    Status FlushBuffer();
-    Status WriteUnbuffered(const char *data, size_t size);
-    Status SyncDirIfManifest();
-    static Status SyncFd(int fd, const std::string &fd_path);
-    static std::string Dirname(const std::string &filename);
-    static Slice Basename(const std::string &filename);
-    static bool IsManifest(const std::string &filename);
-
-    // buf_[0, pos_ - 1] contains data to be written to fd_.
-    char buf_[kWritableFileBufferSize];
-    size_t pos_;
-    int fd_;
-
-    const bool is_manifest_; // True if the file's name starts with MANIFEST.
-    const std::string filename_;
-    const std::string dirname_; // The directory of filename_.
+    virtual Status Append(const Slice &data) = 0;
+    virtual Status Close() = 0;
+    virtual Status Flush() = 0;
+    virtual Status Sync() = 0;
   };
 
+  // An interface for writing log messages.
   class Logger
   {
   public:
     Logger() = default;
-    // Creates a logger that writes to the given file.
-    //
-    // The PosixLogger instance takes ownership of the file handle.
-    explicit Logger(std::FILE *fp) : fp_(fp) { assert(fp != nullptr); }
+
     Logger(const Logger &) = delete;
     Logger &operator=(const Logger &) = delete;
 
-    ~Logger()
-    {
-      std::fclose(fp_);
-    }
+    virtual ~Logger();
 
     // Write an entry to the log file with the specified format.
-    void Logv(const char *format, std::va_list ap);
-
-  private:
-    std::FILE *const fp_;
+    virtual void Logv(const char *format, std::va_list ap) = 0;
   };
 
+  // Identifies a locked file.
   class FileLock
   {
   public:
@@ -422,18 +246,11 @@ namespace QuasDB
 
     FileLock(const FileLock &) = delete;
     FileLock &operator=(const FileLock &) = delete;
-    FileLock(int fd, std::string filename)
-        : fd_(fd), filename_(std::move(filename)) {}
 
-    virtual ~FileLock() = default;
-    int fd() const { return fd_; }
-    const std::string &filename() const { return filename_; }
-
-  private:
-    const int fd_;
-    const std::string filename_;
+    virtual ~FileLock();
   };
 
+  // Log the specified data to *info_log if info_log is non-null.
   void Log(Logger *info_log, const char *format, ...)
       __attribute__((__format__(__printf__, 2, 3)));
 
@@ -444,4 +261,4 @@ namespace QuasDB
   // A utility routine: read contents of named file into *data
   Status ReadFileToString(Env *env, const std::string &fname,
                           std::string *data);
-} // namespace QuasDB
+}

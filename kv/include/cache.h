@@ -79,9 +79,6 @@ namespace QuasDB
 
     // Remove all cache entries that are not actively in use.  Memory-constrained
     // applications may wish to call this method to reduce memory usage.
-    // Default implementation of Prune() does nothing.  Subclasses are strongly
-    // encouraged to override the default implementation.  A future release of
-    // leveldb may change Prune() to a pure abstract method.
     virtual void Prune() {}
 
     // Return an estimate of the combined charges of all elements stored in the

@@ -13,6 +13,7 @@ namespace QuasDB
 
   class TableBuilder
   {
+    public:
     // Create a builder that will store the contents of the table it is
     // building in *file.  Does not close the file.  It is up to the
     // caller to close the file after calling Finish().

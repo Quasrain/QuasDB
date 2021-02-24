@@ -123,7 +123,7 @@ TEST(FileNameTest, Construction) {
   ASSERT_EQ(kInfoLogFile, type);
 }
 
-}  // namespace leveldb
+}  // namespace QuasDB
 
 int main(int argc, char** argv) {
   testing::InitGoogleTest(&argc, argv);

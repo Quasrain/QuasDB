@@ -10,6 +10,7 @@ namespace QuasDB
 
   class WriteBatch
   {
+  public:
     class Handler
     {
     public:

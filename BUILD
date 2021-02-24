@@ -25,6 +25,8 @@ cc_library(
         "kv/db/skiplist.h",
         "kv/db/table_cache.h",
         "kv/db/table_cache.cpp",
+        "kv/db/write_batch.cpp",
+        "kv/db/write_batch_internal.h",
         "kv/include/cache.h",
         "kv/include/comparator.h",
         "kv/include/db.h",
@@ -45,6 +47,14 @@ cc_library(
         "kv/table/filter_block.cpp",
         "kv/table/format.h",
         "kv/table/format.cpp",
+        "kv/table/iterator_wrapper.h",
+        "kv/table/iterator.cpp",
+        "kv/table/merger.h",
+        "kv/table/merger.cpp",
+        "kv/table/table_builder.cpp",
+        "kv/table/table.cpp",
+        "kv/table/two_level_iterator.h",
+        "kv/table/two_level_iterator.cpp",
         "kv/util/arena.h",
         "kv/util/arena.cpp",
         "kv/util/bloom.cpp",
@@ -55,6 +65,7 @@ cc_library(
         "kv/util/crc32c.cpp",
         "kv/util/comparator.cpp",
         "kv/util/env.cpp",
+        "kv/util/env_posix.cpp",
         "kv/util/filter_policy.cpp",
         "kv/util/logging.h",
         "kv/util/logging.cpp",
@@ -62,8 +73,10 @@ cc_library(
         "kv/util/hash.h",
         "kv/util/hash.cpp",
         "kv/util/no_destructor.h",
+        "kv/util/posix_logger.h",
         "kv/util/random.h",
-        "kv/util/status.cpp"
+        "kv/util/status.cpp",
+        "kv/util/testhelper.h"
     ],
     linkopts = [
         "-std=c++17",
@@ -219,11 +232,60 @@ cc_binary(
 
 # https://docs.bazel.build/versions/master/be/c-cpp.html#cc_binary
 cc_binary(
+    name = "testwrite_batch",
+    srcs = [
+        "kv/test/write_batch_test.cpp",
+        "kv/lib/libgtest.a",
+        "kv/lib/libgtest_main.a"
+        ],
+    linkopts = [
+        "-pthread"
+    ],
+    deps = [
+        ":base"
+    ],
+)
+
+# https://docs.bazel.build/versions/master/be/c-cpp.html#cc_binary
+cc_binary(
     name = "testfilter_block",
     srcs = [
         "kv/test/filter_block_test.cpp",
         "kv/lib/libgtest.a",
         "kv/lib/libgtest_main.a"
+        ],
+    linkopts = [
+        "-pthread"
+    ],
+    deps = [
+        ":base"
+    ],
+)
+
+# https://docs.bazel.build/versions/master/be/c-cpp.html#cc_binary
+cc_binary(
+    name = "testtable",
+    srcs = [
+        "kv/test/table_test.cpp",
+        "kv/lib/libgtest.a",
+        "kv/lib/libgtest_main.a"
+        ],
+    linkopts = [
+        "-pthread"
+    ],
+    deps = [
+        ":base"
+    ],
+)
+
+cc_binary(
+    name = "testenv",
+    srcs = [
+        "kv/test/env_test.cpp",
+        "kv/lib/libgtest.a",
+        "kv/lib/libgtest_main.a",
+        "kv/lib/libgmock.a",
+        "kv/lib/libgmock_main.a"
         ],
     linkopts = [
         "-pthread"

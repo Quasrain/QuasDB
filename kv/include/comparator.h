@@ -8,9 +8,7 @@ namespace QuasDB
   class Slice;
 
   // A Comparator object provides a total order across slices that are
-  // used as keys in an sstable or a database.  A Comparator implementation
-  // must be thread-safe since leveldb may invoke its methods concurrently
-  // from multiple threads.
+  // used as keys in an sstable or a database.
   class Comparator
   {
   public:
@@ -47,10 +45,10 @@ namespace QuasDB
     // Simple comparator implementations may return with *key unchanged,
     // i.e., an implementation of this method that does nothing is correct.
     virtual void FindShortSuccessor(std::string *key) const = 0;
-
-    // Return a builtin comparator that uses lexicographic byte-wise
-    // ordering.  The result remains the property of this module and
-    // must not be deleted.
-    const Comparator *BytewiseComparator();
   };
+  
+  // Return a builtin comparator that uses lexicographic byte-wise
+  // ordering.  The result remains the property of this module and
+  // must not be deleted.
+  const Comparator *BytewiseComparator();
 } // namespace QuasDB

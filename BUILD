@@ -109,9 +109,15 @@ cc_library(
 )
 
 cc_binary(
+<<<<<<< HEAD
     name = "demo",
     srcs = [
         "demo.cpp",
+=======
+    name = "tryuse",
+    srcs = [
+        "tryuse.cpp",
+>>>>>>> dc6b3f25138b8e676e8eb7b438fac6208ab5ad20
         ],
     linkopts = [
         "-pthread"

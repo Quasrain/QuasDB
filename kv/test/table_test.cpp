@@ -43,7 +43,7 @@ namespace QuasDB
     public:
       const char *Name() const override
       {
-        return "leveldb.ReverseBytewiseComparator";
+        return "QuasDB.ReverseBytewiseComparator";
       }
 
       int Compare(const Slice &a, const Slice &b) const override
@@ -727,9 +727,6 @@ namespace QuasDB
     }
   }
 
-  // Special test for a block with no restart entries.  The C++ leveldb
-  // code never generates such blocks, but the Java version of leveldb
-  // seems to.
   TEST_F(Harness, ZeroRestartPointsInBlock)
   {
     char data[sizeof(uint32_t)];
@@ -841,7 +838,7 @@ namespace QuasDB
     {
       std::string value;
       char name[100];
-      std::snprintf(name, sizeof(name), "leveldb.num-files-at-level%d", level);
+      std::snprintf(name, sizeof(name), "QuasDB.num-files-at-level%d", level);
       ASSERT_TRUE(db()->GetProperty(name, &value));
       files += atoi(value.c_str());
     }

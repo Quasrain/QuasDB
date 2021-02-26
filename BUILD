@@ -108,6 +108,19 @@ cc_library(
     ]
 )
 
+cc_binary(
+    name = "demo",
+    srcs = [
+        "demo.cpp",
+        ],
+    linkopts = [
+        "-pthread"
+    ],
+    deps = [
+        ":base"
+    ],
+)
+
 # https://docs.bazel.build/versions/master/be/c-cpp.html#cc_binary
 cc_binary(
     name = "testcrc",
@@ -352,6 +365,23 @@ cc_binary(
     name = "testrecovery",
     srcs = [
         "kv/test/recovery_test.cpp",
+        "kv/lib/libgtest.a",
+        "kv/lib/libgtest_main.a",
+        "kv/lib/libgmock.a",
+        "kv/lib/libgmock_main.a"
+        ],
+    linkopts = [
+        "-pthread"
+    ],
+    deps = [
+        ":base"
+    ],
+)
+
+cc_binary(
+    name = "testautocompact",
+    srcs = [
+        "kv/test/autocompact_test.cpp",
         "kv/lib/libgtest.a",
         "kv/lib/libgtest_main.a",
         "kv/lib/libgmock.a",

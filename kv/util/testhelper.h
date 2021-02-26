@@ -11,7 +11,7 @@ namespace QuasDB
   {
 
     MATCHER(IsOK, "") { return arg.ok(); }
-    
+
     // Store in *dst a random string of length "len" and return a Slice that
     // references the generated data.
     Slice RandomString(Random *rnd, int len, std::string *dst)

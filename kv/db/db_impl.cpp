@@ -367,10 +367,6 @@ namespace QuasDB
     // Recover from all newer log files than the ones named in the
     // descriptor (new log files may have been added by the previous
     // incarnation without registering them in the descriptor).
-    //
-    // Note that PrevLogNumber() is no longer used, but we pay
-    // attention to it in case we are recovering a database
-    // produced by an older version of leveldb.
     const uint64_t min_log = versions_->LogNumber();
     const uint64_t prev_log = versions_->PrevLogNumber();
     std::vector<std::string> filenames;
@@ -1628,7 +1624,7 @@ namespace QuasDB
 
     MutexLock l(&mutex_);
     Slice in = property;
-    Slice prefix("leveldb.");
+    Slice prefix("QuasDB.");
     if (!in.starts_with(prefix))
       return false;
     in.remove_prefix(prefix.size());

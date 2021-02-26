@@ -21,6 +21,20 @@ namespace QuasDB
     MemTable(const MemTable &) = delete;
     MemTable &operator=(const MemTable &) = delete;
 
+    // Increase reference count.
+    void Ref() { ++refs_; }
+
+    // Drop reference count.  Delete if no more references exist.
+    void Unref()
+    {
+      --refs_;
+      assert(refs_ >= 0);
+      if (refs_ <= 0)
+      {
+        delete this;
+      }
+    }
+
     // Returns an estimate of the number of bytes of data in use by this
     // data structure. It is safe to call when MemTable is being modified.
     size_t ApproximateMemoryUsage();
@@ -58,7 +72,10 @@ namespace QuasDB
 
     typedef SkipList<const char *, KeyComparator> Table;
 
+    ~MemTable(); // Private since only Unref() should be used to delete it
+
     KeyComparator comparator_;
+    int refs_;
     Arena arena_;
     Table table_;
   };

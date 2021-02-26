@@ -63,6 +63,7 @@
     "typeinfo": "cpp",
     "condition_variable": "cpp",
     "mutex": "cpp",
-    "cassert": "cpp"
+    "cassert": "cpp",
+    "codecvt": "cpp"
   }
 }

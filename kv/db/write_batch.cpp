@@ -138,7 +138,7 @@ namespace QuasDB
     {
     public:
       SequenceNumber sequence_;
-      std::shared_ptr<MemTable> mem_;
+      MemTable* mem_;
 
       void Put(const Slice &key, const Slice &value) override
       {
@@ -153,7 +153,7 @@ namespace QuasDB
     };
   } // namespace
 
-  Status WriteBatchInternal::InsertInto(const WriteBatch *b, std::shared_ptr<MemTable> memtable)
+  Status WriteBatchInternal::InsertInto(const WriteBatch *b, MemTable* memtable)
   {
     MemTableInserter inserter;
     inserter.sequence_ = WriteBatchInternal::Sequence(b);

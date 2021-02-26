@@ -71,6 +71,8 @@ namespace QuasDB
 
   Version::~Version()
   {
+    assert(refs_ == 0);
+
     // Remove from linked list
     prev_->next_ = next_;
     next_->prev_ = prev_;
@@ -530,6 +532,19 @@ namespace QuasDB
     return false;
   }
 
+  void Version::Ref() { ++refs_; }
+
+  void Version::Unref()
+  {
+    assert(this != &vset_->dummy_versions_);
+    assert(refs_ >= 1);
+    --refs_;
+    if (refs_ == 0)
+    {
+      delete this;
+    }
+  }
+
   bool Version::OverlapInLevel(int level, const Slice *smallest_user_key,
                                const Slice *largest_user_key)
   {
@@ -689,13 +704,14 @@ namespace QuasDB
     };
 
     VersionSet *vset_;
-    std::shared_ptr<Version> base_;
+    Version *base_;
     LevelState levels_[config::kNumLevels];
 
   public:
     // Initialize a builder with the files from *base and other info from *vset
-    Builder(VersionSet *vset, std::shared_ptr<Version> base) : vset_(vset), base_(base)
+    Builder(VersionSet *vset, Version *base) : vset_(vset), base_(base)
     {
+      base_->Ref();
       BySmallestKey cmp;
       cmp.internal_comparator = &vset_->icmp_;
       for (int level = 0; level < config::kNumLevels; level++)
@@ -727,7 +743,7 @@ namespace QuasDB
           }
         }
       }
-      base_ = nullptr;
+      base_->Unref();
     }
 
     // Apply all of the edits in *edit to the current state.
@@ -779,7 +795,7 @@ namespace QuasDB
     }
 
     // Save the current state in *v.
-    void SaveTo(std::shared_ptr<Version> v)
+    void SaveTo(Version *v)
     {
       BySmallestKey cmp;
       cmp.internal_comparator = &vset_->icmp_;
@@ -832,7 +848,7 @@ namespace QuasDB
       }
     }
 
-    void MaybeAddFile(std::shared_ptr<Version> v, int level, FileMetaData *f)
+    void MaybeAddFile(Version *v, int level, FileMetaData *f)
     {
       if (levels_[level].deleted_files.count(f->number) > 0)
       {
@@ -868,33 +884,35 @@ namespace QuasDB
         prev_log_number_(0),
         descriptor_file_(nullptr),
         descriptor_log_(nullptr),
-        dummy_versions_(std::make_shared<Version>(this)),
+        dummy_versions_(this),
         current_(nullptr)
   {
-    AppendVersion(std::make_shared<Version>(new Version(this)));
+    AppendVersion(new Version(this));
   }
 
   VersionSet::~VersionSet()
   {
-    current_ = nullptr;
-    assert(dummy_versions_->next_ == dummy_versions_); // List must be empty
+    current_->Unref();
+    assert(dummy_versions_.next_ == &dummy_versions_); // List must be empty
     delete descriptor_log_;
     delete descriptor_file_;
   }
 
-  void VersionSet::AppendVersion(std::shared_ptr<Version> v)
+  void VersionSet::AppendVersion(Version *v)
   {
     // Make "v" current
+    assert(v->refs_ == 0);
     assert(v != current_);
     if (current_ != nullptr)
     {
-      current_ = nullptr;
+      current_->Unref();
     }
     current_ = v;
+    v->Ref();
 
     // Append to linked list
-    v->prev_ = dummy_versions_->prev_;
-    v->next_ = dummy_versions_;
+    v->prev_ = dummy_versions_.prev_;
+    v->next_ = &dummy_versions_;
     v->prev_->next_ = v;
     v->next_->prev_ = v;
   }
@@ -919,7 +937,7 @@ namespace QuasDB
     edit->SetNextFile(next_file_number_);
     edit->SetLastSequence(last_sequence_);
 
-    std::shared_ptr<Version> v(new Version(this));
+    Version *v = new Version(this);
     {
       Builder builder(this, current_);
       builder.Apply(edit);
@@ -985,7 +1003,7 @@ namespace QuasDB
     }
     else
     {
-      v = nullptr;
+      delete v;
       if (!new_manifest_file.empty())
       {
         delete descriptor_log_;
@@ -1128,7 +1146,7 @@ namespace QuasDB
 
     if (s.ok())
     {
-      std::shared_ptr<Version> v(new Version(this));
+      Version *v = new Version(this);
       builder.SaveTo(v);
       // Install recovered version
       Finalize(v);
@@ -1196,7 +1214,7 @@ namespace QuasDB
     }
   }
 
-  void VersionSet::Finalize(std::shared_ptr<Version> v)
+  void VersionSet::Finalize(Version *v)
   {
     // Precomputed best level for next compaction
     int best_level = -1;
@@ -1295,7 +1313,7 @@ namespace QuasDB
     return scratch->buffer;
   }
 
-  uint64_t VersionSet::ApproximateOffsetOf(std::shared_ptr<Version> v, const InternalKey &ikey)
+  uint64_t VersionSet::ApproximateOffsetOf(Version *v, const InternalKey &ikey)
   {
     uint64_t result = 0;
     for (int level = 0; level < config::kNumLevels; level++)
@@ -1339,7 +1357,7 @@ namespace QuasDB
 
   void VersionSet::AddLiveFiles(std::set<uint64_t> *live)
   {
-    for (std::shared_ptr<Version> v = dummy_versions_->next_; v != dummy_versions_;
+    for (Version *v = dummy_versions_.next_; v != &dummy_versions_;
          v = v->next_)
     {
       for (int level = 0; level < config::kNumLevels; level++)
@@ -1509,6 +1527,7 @@ namespace QuasDB
     }
 
     c->input_version_ = current_;
+    c->input_version_->Ref();
 
     // Files in level 0 may overlap each other, so pick up all overlapping ones
     if (level == 0)
@@ -1718,6 +1737,7 @@ namespace QuasDB
 
     Compaction *c = new Compaction(options_, level);
     c->input_version_ = current_;
+    c->input_version_->Ref();
     c->inputs_[0] = inputs;
     SetupOtherInputs(c);
     return c;
@@ -1741,7 +1761,7 @@ namespace QuasDB
   {
     if (input_version_ != nullptr)
     {
-      input_version_ = nullptr;
+      input_version_->Unref();
     }
   }
 
@@ -1827,7 +1847,9 @@ namespace QuasDB
   {
     if (input_version_ != nullptr)
     {
+      input_version_->Unref();
       input_version_ = nullptr;
     }
   }
+
 }

@@ -11,12 +11,14 @@ namespace QuasDB
   {
     uint32_t len;
     const char *p = data;
-    p = GetVarint32Ptr(p, p + 5, &len);
+    p = GetVarint32Ptr(p, p + 5, &len); // +5: we assume "p" is not corrupted
     return Slice(p, len);
   }
 
   MemTable::MemTable(const InternalKeyComparator &comparator)
-      : comparator_(comparator), table_(comparator_, &arena_) {}
+      : comparator_(comparator), refs_(0), table_(comparator_, &arena_) {}
+
+  MemTable::~MemTable() { assert(refs_ == 0); }
 
   size_t MemTable::ApproximateMemoryUsage() { return arena_.MemoryUsage(); }
 

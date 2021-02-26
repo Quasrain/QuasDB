@@ -124,7 +124,7 @@ namespace QuasDB
     Status RecoverLogFile(uint64_t log_number, bool last_log, bool *save_manifest,
                           VersionEdit *edit, SequenceNumber *max_sequence);
 
-    Status WriteLevel0Table(std::shared_ptr<MemTable> mem, VersionEdit *edit, std::shared_ptr<Version> base);
+    Status WriteLevel0Table(MemTable* mem, VersionEdit *edit, Version* base);
 
     Status MakeRoomForWrite(bool force /* compact even if there is room? */);
     WriteBatch *BuildBatchGroup(Writer **last_writer);
@@ -166,8 +166,8 @@ namespace QuasDB
     std::mutex mutex_;
     std::atomic<bool> shutting_down_;
     std::condition_variable background_work_finished_signal_;
-    std::shared_ptr<MemTable> mem_;
-    std::shared_ptr<MemTable> imm_;
+    MemTable* mem_;
+    MemTable* imm_;
     std::atomic<bool> has_imm_; // So bg thread can detect non-null imm_
     WritableFile *logfile_;
     uint64_t logfile_number_;

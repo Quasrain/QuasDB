@@ -347,3 +347,20 @@ cc_binary(
         ":base"
     ],
 )
+
+cc_binary(
+    name = "testrecovery",
+    srcs = [
+        "kv/test/recovery_test.cpp",
+        "kv/lib/libgtest.a",
+        "kv/lib/libgtest_main.a",
+        "kv/lib/libgmock.a",
+        "kv/lib/libgmock_main.a"
+        ],
+    linkopts = [
+        "-pthread"
+    ],
+    deps = [
+        ":base"
+    ],
+)

@@ -43,22 +43,6 @@ namespace QuasDB
   class Version
   {
   public:
-    Version(VersionSet *vset)
-        : vset_(vset),
-          file_to_compact_(nullptr),
-          file_to_compact_level_(-1),
-          compaction_score_(-1),
-          compaction_level_(-1)
-    {
-      next_.reset(this);
-      prev_.reset(this);
-    }
-
-    Version(const Version &) = delete;
-    Version &operator=(const Version &) = delete;
-
-    ~Version();
-
     // Lookup the value for key.  If found, store it in *val and
     // return OK.  Else return a non-OK status.  Fills *stats.
     // REQUIRES: lock is not held
@@ -86,6 +70,11 @@ namespace QuasDB
     // bytes.  Returns true if a new compaction may need to be triggered.
     // REQUIRES: lock is held
     bool RecordReadSample(Slice key);
+
+    // Reference count management (so Versions do not disappear out from
+    // under live iterators)
+    void Ref();
+    void Unref();
 
     void GetOverlappingInputs(
         int level,
@@ -116,6 +105,21 @@ namespace QuasDB
 
     class LevelFileNumIterator;
 
+    explicit Version(VersionSet *vset)
+        : vset_(vset),
+          next_(this),
+          prev_(this),
+          refs_(0),
+          file_to_compact_(nullptr),
+          file_to_compact_level_(-1),
+          compaction_score_(-1),
+          compaction_level_(-1) {}
+
+    Version(const Version &) = delete;
+    Version &operator=(const Version &) = delete;
+
+    ~Version();
+
     Iterator *NewConcatenatingIterator(const ReadOptions &, int level) const;
 
     // Call func(arg, level, f) for every file that overlaps user_key in
@@ -126,9 +130,10 @@ namespace QuasDB
     void ForEachOverlapping(Slice user_key, Slice internal_key, void *arg,
                             bool (*func)(void *, int, FileMetaData *));
 
-    VersionSet *vset_;              // VersionSet to which this Version belongs
-    std::shared_ptr<Version> next_; // Next version in linked list
-    std::shared_ptr<Version> prev_; // Previous version in linked list
+    VersionSet *vset_; // VersionSet to which this Version belongs
+    Version *next_;    // Next version in linked list
+    Version *prev_;    // Previous version in linked list
+    int refs_;         // Number of live refs to this version
 
     // List of files per level
     std::vector<FileMetaData *> files_[config::kNumLevels];
@@ -157,13 +162,15 @@ namespace QuasDB
     // Apply *edit to the current version to form a new descriptor that
     // is both saved to persistent state and installed as the new
     // current version.  Will release *mu while actually writing to the file.
+    // REQUIRES: *mu is held on entry.
+    // REQUIRES: no other thread concurrently calls LogAndApply()
     Status LogAndApply(VersionEdit *edit, std::mutex *mu);
 
     // Recover the last saved descriptor from persistent storage.
     Status Recover(bool *save_manifest);
 
     // Return the current version.
-    std::shared_ptr<Version> current() const { return current_; }
+    Version *current() const { return current_; }
 
     // Return the current manifest file number
     uint64_t ManifestFileNumber() const { return manifest_file_number_; }
@@ -232,7 +239,7 @@ namespace QuasDB
     // Returns true iff some level needs a compaction.
     bool NeedsCompaction() const
     {
-      std::shared_ptr<Version> v = current_;
+      Version *v = current_;
       return (v->compaction_score_ >= 1) || (v->file_to_compact_ != nullptr);
     }
 
@@ -242,7 +249,7 @@ namespace QuasDB
 
     // Return the approximate offset in the database of the data for
     // "key" as of version "v".
-    uint64_t ApproximateOffsetOf(std::shared_ptr<Version> v, const InternalKey &key);
+    uint64_t ApproximateOffsetOf(Version *v, const InternalKey &key);
 
     // Return a human-readable short (single-line) summary of the number
     // of files per level.  Uses *scratch as backing store.
@@ -260,7 +267,7 @@ namespace QuasDB
 
     bool ReuseManifest(const std::string &dscname, const std::string &dscbase);
 
-    void Finalize(std::shared_ptr<Version> v);
+    void Finalize(Version *v);
 
     void GetRange(const std::vector<FileMetaData *> &inputs, InternalKey *smallest,
                   InternalKey *largest);
@@ -274,7 +281,7 @@ namespace QuasDB
     // Save current contents to *log
     Status WriteSnapshot(log::Writer *log);
 
-    void AppendVersion(std::shared_ptr<Version> v);
+    void AppendVersion(Version *v);
 
     Env *const env_;
     const std::string dbname_;
@@ -290,8 +297,8 @@ namespace QuasDB
     // Opened lazily
     WritableFile *descriptor_file_;
     log::Writer *descriptor_log_;
-    std::shared_ptr<Version> dummy_versions_; // Head of circular doubly-linked list of versions.
-    std::shared_ptr<Version> current_;        // == dummy_versions_.prev_
+    Version dummy_versions_; // Head of circular doubly-linked list of versions.
+    Version *current_;       // == dummy_versions_.prev_
 
     // Per-level key at which the next compaction at that level should start.
     // Either an empty string, or a valid InternalKey.
@@ -349,7 +356,7 @@ namespace QuasDB
 
     int level_;
     uint64_t max_output_file_size_;
-    std::shared_ptr<Version> input_version_;
+    Version *input_version_;
     VersionEdit edit_;
 
     // Each compaction reads inputs from "level_" and "level_+1"

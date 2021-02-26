@@ -43,7 +43,7 @@ namespace QuasDB
     public:
       const char *Name() const override
       {
-        return "QuasDB.ReverseBytewiseComparator";
+        return "leveldb.ReverseBytewiseComparator";
       }
 
       int Compare(const Slice &a, const Slice &b) const override
@@ -250,8 +250,10 @@ namespace QuasDB
       for (const auto &kvp : data)
       {
         builder.Add(kvp.first, kvp.second);
+        EXPECT_THAT(builder.status(), QuasDB::test::IsOK());
       }
       Status s = builder.Finish();
+      EXPECT_THAT(s, QuasDB::test::IsOK());
 
       EXPECT_EQ(sink.contents().size(), builder.FileSize());
 
@@ -340,12 +342,15 @@ namespace QuasDB
     explicit MemTableConstructor(const Comparator *cmp)
         : Constructor(cmp), internal_comparator_(cmp)
     {
-      memtable_.reset(new MemTable(internal_comparator_));
+      memtable_ = new MemTable(internal_comparator_);
+      memtable_->Ref();
     }
-    ~MemTableConstructor() override { memtable_ = nullptr; }
+    ~MemTableConstructor() override { memtable_->Unref(); }
     Status FinishImpl(const Options &options, const KVMap &data) override
     {
-      memtable_.reset(new MemTable(internal_comparator_));
+      memtable_->Unref();
+      memtable_ = new MemTable(internal_comparator_);
+      memtable_->Ref();
       int seq = 1;
       for (const auto &kvp : data)
       {
@@ -361,7 +366,7 @@ namespace QuasDB
 
   private:
     const InternalKeyComparator internal_comparator_;
-    std::shared_ptr<MemTable> memtable_;
+    MemTable *memtable_;
   };
 
   class DBConstructor : public Constructor
@@ -722,8 +727,8 @@ namespace QuasDB
     }
   }
 
-  // Special test for a block with no restart entries.  The C++ QuasDB
-  // code never generates such blocks, but the Java version of QuasDB
+  // Special test for a block with no restart entries.  The C++ leveldb
+  // code never generates such blocks, but the Java version of leveldb
   // seems to.
   TEST_F(Harness, ZeroRestartPointsInBlock)
   {
@@ -836,7 +841,7 @@ namespace QuasDB
     {
       std::string value;
       char name[100];
-      std::snprintf(name, sizeof(name), "QuasDB.num-files-at-level%d", level);
+      std::snprintf(name, sizeof(name), "leveldb.num-files-at-level%d", level);
       ASSERT_TRUE(db()->GetProperty(name, &value));
       files += atoi(value.c_str());
     }
@@ -846,14 +851,15 @@ namespace QuasDB
   TEST(MemTableTest, Simple)
   {
     InternalKeyComparator cmp(BytewiseComparator());
-    std::shared_ptr<MemTable> memtable(new MemTable(cmp));
+    MemTable *memtable = new MemTable(cmp);
+    memtable->Ref();
     WriteBatch batch;
     WriteBatchInternal::SetSequence(&batch, 100);
     batch.Put(std::string("k1"), std::string("v1"));
     batch.Put(std::string("k2"), std::string("v2"));
     batch.Put(std::string("k3"), std::string("v3"));
     batch.Put(std::string("largekey"), std::string("vlarge"));
-    ASSERT_TRUE(WriteBatchInternal::InsertInto(&batch, memtable.get()).ok());
+    ASSERT_TRUE(WriteBatchInternal::InsertInto(&batch, memtable).ok());
 
     Iterator *iter = memtable->NewIterator();
     iter->SeekToFirst();
@@ -865,7 +871,7 @@ namespace QuasDB
     }
 
     delete iter;
-    memtable = nullptr;
+    memtable->Unref();
   }
 
   static bool Between(uint64_t val, uint64_t low, uint64_t high)
@@ -958,7 +964,6 @@ namespace QuasDB
     // Have now emitted two large compressible strings, so adjust expected offset.
     ASSERT_TRUE(Between(c.ApproximateOffsetOf("xyz"), 2 * min_z, 2 * max_z));
   }
-
 } // namespace QuasDB
 
 int main(int argc, char **argv)

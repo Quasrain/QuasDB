@@ -4,7 +4,7 @@
 #include "block.h"
 #include "kv/util/coding.h"
 #include "kv/util/crc32c.h"
-#include <snappy/snappy.h>
+#include "kv/lib/snappy.h"
 
 namespace QuasDB
 {

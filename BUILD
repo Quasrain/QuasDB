@@ -1,3 +1,12 @@
+cc_library(
+    name = "snappy",
+    srcs = [
+        "kv/lib/libsnappy.a",
+        "kv/lib/snappy.h",
+        "kv/lib/snappy-stubs-public.h",
+    ]
+)
+
 # https://docs.bazel.build/versions/master/be/c-cpp.html#cc_library
 cc_library(
     name = "base",
@@ -9,10 +18,15 @@ cc_library(
         "error/error_all.h",
         "error/error_system.h",
         # kv
-        "kv/lib/libsnappy.a",
-        "kv/lib/libcrc32c.a",
+        "kv/db/builder.h",
+        "kv/db/builder.cpp",
+        "kv/db/db_impl.h",
+        "kv/db/db_impl.cpp",
+        "kv/db/db_iter.h",
+        "kv/db/db_iter.cpp",
         "kv/db/dbformat.h",
         "kv/db/dbformat.cpp",
+        "kv/db/dumpfile.cpp",
         "kv/db/filename.h",
         "kv/db/filename.cpp",
         "kv/db/log_format.h",
@@ -23,13 +37,19 @@ cc_library(
         "kv/db/memtable.h",
         "kv/db/memtable.cpp",
         "kv/db/skiplist.h",
+        "kv/db/snapshot.h",
         "kv/db/table_cache.h",
         "kv/db/table_cache.cpp",
+        "kv/db/version_edit.h",
+        "kv/db/version_edit.cpp",
+        "kv/db/version_set.h",
+        "kv/db/version_set.cpp",
         "kv/db/write_batch.cpp",
         "kv/db/write_batch_internal.h",
         "kv/include/cache.h",
         "kv/include/comparator.h",
         "kv/include/db.h",
+        "kv/include/dumpfile.h",
         "kv/include/env.h",
         "kv/include/filter_policy.h",
         "kv/include/iterator.h",
@@ -82,6 +102,9 @@ cc_library(
         "-std=c++17",
         "-lboost_system",
         "-lboost_filesystem"
+    ],
+    deps = [
+        ":snappy"
     ]
 )
 
@@ -286,6 +309,36 @@ cc_binary(
         "kv/lib/libgtest_main.a",
         "kv/lib/libgmock.a",
         "kv/lib/libgmock_main.a"
+        ],
+    linkopts = [
+        "-pthread"
+    ],
+    deps = [
+        ":base"
+    ],
+)
+
+cc_binary(
+    name = "testversion_set",
+    srcs = [
+        "kv/test/version_set_test.cpp",
+        "kv/lib/libgtest.a",
+        "kv/lib/libgtest_main.a"
+        ],
+    linkopts = [
+        "-pthread"
+    ],
+    deps = [
+        ":base"
+    ],
+)
+
+cc_binary(
+    name = "testversion_edit",
+    srcs = [
+        "kv/test/version_edit_test.cpp",
+        "kv/lib/libgtest.a",
+        "kv/lib/libgtest_main.a"
         ],
     linkopts = [
         "-pthread"

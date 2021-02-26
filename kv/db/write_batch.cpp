@@ -11,6 +11,8 @@
 
 #include "kv/include/write_batch.h"
 
+#include <memory>
+
 #include "dbformat.h"
 #include "memtable.h"
 #include "write_batch_internal.h"
@@ -136,7 +138,7 @@ namespace QuasDB
     {
     public:
       SequenceNumber sequence_;
-      MemTable *mem_;
+      std::shared_ptr<MemTable> mem_;
 
       void Put(const Slice &key, const Slice &value) override
       {
@@ -151,7 +153,7 @@ namespace QuasDB
     };
   } // namespace
 
-  Status WriteBatchInternal::InsertInto(const WriteBatch *b, MemTable *memtable)
+  Status WriteBatchInternal::InsertInto(const WriteBatch *b, std::shared_ptr<MemTable> memtable)
   {
     MemTableInserter inserter;
     inserter.sequence_ = WriteBatchInternal::Sequence(b);

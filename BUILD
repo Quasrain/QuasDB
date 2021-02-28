@@ -11,13 +11,6 @@ cc_library(
 cc_library(
     name = "base",
     srcs = [
-        # conf
-        "conf/Config.cpp",
-        "conf/Config.h",
-        # error
-        "error/error_all.h",
-        "error/error_system.h",
-        # kv
         "kv/db/builder.h",
         "kv/db/builder.cpp",
         "kv/db/db_impl.h",
@@ -99,9 +92,7 @@ cc_library(
         "kv/util/testhelper.h"
     ],
     linkopts = [
-        "-std=c++17",
-        "-lboost_system",
-        "-lboost_filesystem"
+        "-std=c++17"
     ],
     deps = [
         ":snappy"
@@ -109,15 +100,9 @@ cc_library(
 )
 
 cc_binary(
-<<<<<<< HEAD
     name = "demo",
     srcs = [
         "demo.cpp",
-=======
-    name = "tryuse",
-    srcs = [
-        "tryuse.cpp",
->>>>>>> dc6b3f25138b8e676e8eb7b438fac6208ab5ad20
         ],
     linkopts = [
         "-pthread"
@@ -125,6 +110,33 @@ cc_binary(
     deps = [
         ":base"
     ],
+)
+
+cc_binary(
+    name = "httpserver",
+    srcs = [
+        "http_server/connection_manager.h",
+        "http_server/connection_manager.cpp",
+        "http_server/connection.h",
+        "http_server/connection.cpp",
+        "http_server/header.h",
+        "http_server/main.cpp",
+        "http_server/mime_types.h",
+        "http_server/mime_types.cpp",
+        "http_server/reply.h",
+        "http_server/reply.cpp",
+        "http_server/request_handler.h",
+        "http_server/request_handler.cpp",
+        "http_server/request_parser.h",
+        "http_server/request_parser.cpp",
+        "http_server/request.h",
+        "http_server/server.h",
+        "http_server/server.cpp",
+    ],
+    linkopts = [
+        "-lboost_system",
+        "-pthread"
+    ]
 )
 
 # https://docs.bazel.build/versions/master/be/c-cpp.html#cc_binary

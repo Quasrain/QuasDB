@@ -64,6 +64,9 @@
     "condition_variable": "cpp",
     "mutex": "cpp",
     "cassert": "cpp",
-    "codecvt": "cpp"
+    "codecvt": "cpp",
+    "*.ipp": "cpp",
+    "csignal": "cpp",
+    "future": "cpp"
   }
 }

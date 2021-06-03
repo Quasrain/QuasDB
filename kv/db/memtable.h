@@ -4,7 +4,7 @@
 #include "dbformat.h"
 #include "skiplist.h"
 #include "kv/include/db.h"
-#include "kv/util/arena.h"
+#include "kv/util/mempool.h"
 
 namespace QuasDB
 {
@@ -76,7 +76,7 @@ namespace QuasDB
 
     KeyComparator comparator_;
     int refs_;
-    Arena arena_;
+    MemPool pool_;
     Table table_;
   };
 } // namespace QuasDB

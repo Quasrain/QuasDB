@@ -4,12 +4,12 @@
 #include <cassert>
 #include <cstdlib>
 
-#include "kv/util/arena.h"
+#include "kv/util/mempool.h"
 #include "kv/util/random.h"
 
 namespace QuasDB
 {
-  class Arena;
+  class MemPool;
 
   template <typename Key, class Comparator>
   class SkipList
@@ -19,9 +19,9 @@ namespace QuasDB
 
   public:
     // Create a new SkipList object that will use "cmp" for comparing keys,
-    // and will allocate memory using "*arena".  Objects allocated in the arena
+    // and will allocate memory using "*pool".  Objects allocated in the pool
     // must remain allocated for the lifetime of the skiplist object.
-    explicit SkipList(Comparator cmp, Arena *arena);
+    explicit SkipList(Comparator cmp, MemPool *pool);
 
     SkipList(const SkipList &) = delete;
     SkipList &operator=(const SkipList &) = delete;
@@ -108,7 +108,7 @@ namespace QuasDB
 
     // Immutable after construction
     Comparator const compare_;
-    Arena *const arena_; // Arena used for allocations of nodes
+    MemPool *const pool_; // MemPool used for allocations of nodes
 
     Node *const head_;
 
@@ -165,7 +165,7 @@ namespace QuasDB
   typename SkipList<Key, Comparator>::Node *SkipList<Key, Comparator>::NewNode(
       const Key &key, int height)
   {
-    char *const node_memory = arena_->AllocateAligned(
+    char *const node_memory = pool_->AllocateAligned(
         sizeof(Node) + sizeof(std::atomic<Node *>) * (height - 1));
     return new (node_memory) Node(key);
   }
@@ -344,9 +344,9 @@ namespace QuasDB
   }
 
   template <typename Key, class Comparator>
-  SkipList<Key, Comparator>::SkipList(Comparator cmp, Arena *arena)
+  SkipList<Key, Comparator>::SkipList(Comparator cmp, MemPool *pool)
       : compare_(cmp),
-        arena_(arena),
+        pool_(pool),
         head_(NewNode(0 /* any key will do */, kMaxHeight)),
         max_height_(1),
         rnd_(0xdeadbeef)

@@ -1,13 +1,13 @@
-#include "kv/util/arena.h"
+#include "kv/util/mempool.h"
 
 namespace QuasDB
 {
   static const int kBlockSize = 4096;
 
-  Arena::Arena()
+  MemPool::MemPool()
       : alloc_ptr_(nullptr), alloc_bytes_remaining_(0), memory_usage_(0) {}
 
-  Arena::~Arena()
+  MemPool::~MemPool()
   {
     for (size_t i = 0; i < blocks_.size(); i++)
     {
@@ -15,7 +15,7 @@ namespace QuasDB
     }
   }
 
-  char *Arena::AllocateFallback(size_t bytes)
+  char *MemPool::AllocateFallback(size_t bytes)
   {
     if (bytes > kBlockSize / 4)
     {
@@ -35,7 +35,7 @@ namespace QuasDB
     return result;
   }
 
-  char *Arena::AllocateAligned(size_t bytes)
+  char *MemPool::AllocateAligned(size_t bytes)
   {
     const int align = (sizeof(void *) > 8) ? sizeof(void *) : 8;
     static_assert((align & (align - 1)) == 0,
@@ -59,7 +59,7 @@ namespace QuasDB
     return result;
   }
 
-  char *Arena::AllocateNewBlock(size_t block_bytes)
+  char *MemPool::AllocateNewBlock(size_t block_bytes)
   {
     char *result = new char[block_bytes];
     blocks_.push_back(result);

@@ -16,11 +16,11 @@ namespace QuasDB
   }
 
   MemTable::MemTable(const InternalKeyComparator &comparator)
-      : comparator_(comparator), refs_(0), table_(comparator_, &arena_) {}
+      : comparator_(comparator), refs_(0), table_(comparator_, &pool_) {}
 
   MemTable::~MemTable() { assert(refs_ == 0); }
 
-  size_t MemTable::ApproximateMemoryUsage() { return arena_.MemoryUsage(); }
+  size_t MemTable::ApproximateMemoryUsage() { return pool_.MemoryUsage(); }
 
   int MemTable::KeyComparator::operator()(const char *aptr,
                                           const char *bptr) const
@@ -88,7 +88,7 @@ namespace QuasDB
     const size_t encoded_len = VarintLength(internal_key_size) +
                                internal_key_size + VarintLength(val_size) +
                                val_size;
-    char *buf = arena_.Allocate(encoded_len);
+    char *buf = pool_.Allocate(encoded_len);
     char *p = EncodeVarint32(buf, internal_key_size);
     std::memcpy(p, key.data(), key_size);
     p += key_size;

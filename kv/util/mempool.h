@@ -8,15 +8,15 @@
 
 namespace QuasDB
 {
-  class Arena
+  class MemPool
   {
   public:
-    Arena();
+    MemPool();
 
-    Arena(const Arena &) = delete;
-    Arena &operator=(const Arena &) = delete;
+    MemPool(const MemPool &) = delete;
+    MemPool &operator=(const MemPool &) = delete;
 
-    ~Arena();
+    ~MemPool();
 
     // Return a pointer to a newly allocated memory block of "bytes" bytes.
     char *Allocate(size_t bytes);
@@ -25,7 +25,7 @@ namespace QuasDB
     char *AllocateAligned(size_t bytes);
 
     // Returns an estimate of the total memory usage of data allocated
-    // by the arena.
+    // by the pool.
     size_t MemoryUsage() const
     {
       return memory_usage_.load(std::memory_order_relaxed);
@@ -42,11 +42,11 @@ namespace QuasDB
     // Array of new[] allocated memory blocks
     std::vector<char *> blocks_;
 
-    // Total memory usage of the arena.
+    // Total memory usage of the pool.
     std::atomic<size_t> memory_usage_;
   };
 
-  inline char *Arena::Allocate(size_t bytes)
+  inline char *MemPool::Allocate(size_t bytes)
   {
     // The semantics of what to return are a bit messy if we allow
     // 0-byte allocations, so we disallow them here (we don't need

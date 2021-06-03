@@ -7,7 +7,7 @@
 
 #include "gtest/gtest.h"
 #include "kv/include/env.h"
-#include "kv/util/arena.h"
+#include "kv/util/mempool.h"
 #include "kv/util/hash.h"
 #include "kv/util/random.h"
 
@@ -36,9 +36,9 @@ namespace QuasDB
 
   TEST(SkipTest, Empty)
   {
-    Arena arena;
+    MemPool pool;
     Comparator cmp;
-    SkipList<Key, Comparator> list(cmp, &arena);
+    SkipList<Key, Comparator> list(cmp, &pool);
     ASSERT_TRUE(!list.Contains(10));
 
     SkipList<Key, Comparator>::Iterator iter(&list);
@@ -57,9 +57,9 @@ namespace QuasDB
     const int R = 5000;
     Random rnd(1000);
     std::set<Key> keys;
-    Arena arena;
+    MemPool pool;
     Comparator cmp;
-    SkipList<Key, Comparator> list(cmp, &arena);
+    SkipList<Key, Comparator> list(cmp, &pool);
     for (int i = 0; i < N; i++)
     {
       Key key = rnd.Next() % R;
@@ -231,14 +231,14 @@ namespace QuasDB
     // Current state of the test
     State current_;
 
-    Arena arena_;
+    MemPool pool_;
 
     // SkipList is not protected by mu_.  We just use a single writer
     // thread to modify it.
     SkipList<Key, Comparator> list_;
 
   public:
-    ConcurrentTest() : list_(Comparator(), &arena_) {}
+    ConcurrentTest() : list_(Comparator(), &pool_) {}
 
     // REQUIRES: External synchronization
     void WriteStep(Random *rnd)
